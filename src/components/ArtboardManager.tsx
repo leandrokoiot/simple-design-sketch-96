@@ -16,16 +16,25 @@ import {
   FileImage,
   Code,
   Plus,
-  Save
+  Save,
+  Clipboard,
+  ClipboardPaste,
+  Search,
+  Star,
+  Clock
 } from "lucide-react";
 import { Artboard } from "@/utils/projectState";
 import { FabricObject } from "fabric";
 import { useArtboardExport } from "@/hooks/useArtboardExport";
+import { useArtboardClipboard } from "@/hooks/useArtboardClipboard";
 import { 
   defaultArtboardTemplates, 
   getTemplatesByCategory, 
   createArtboardFromTemplate,
-  ArtboardTemplate 
+  ArtboardTemplate,
+  searchTemplates,
+  getPopularTemplates,
+  getRecentTemplates
 } from "@/utils/artboardTemplates";
 
 interface ArtboardManagerProps {
@@ -59,8 +68,17 @@ export const ArtboardManager = ({
   const [customName, setCustomName] = useState("");
   const [exportFormat, setExportFormat] = useState<'png' | 'svg'>('png');
   const [exportScale, setExportScale] = useState(2);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("Popular");
   
   const { exportArtboard } = useArtboardExport();
+  const { 
+    copyArtboard, 
+    pasteArtboard, 
+    duplicateArtboard,
+    hasClipboard,
+    clearClipboard 
+  } = useArtboardClipboard();
 
   // Calculate elements in selected artboard
   const elementsInArtboard = useMemo(() => {
@@ -71,6 +89,31 @@ export const ArtboardManager = ({
       !(obj as any).isGridLine
     ).length;
   }, [selectedArtboard, canvasObjects]);
+
+  // Get templates based on category and search
+  const filteredTemplates = useMemo(() => {
+    let templates: ArtboardTemplate[] = [];
+    
+    if (selectedCategory === "Popular") {
+      templates = getPopularTemplates();
+    } else if (selectedCategory === "Recent") {
+      templates = getRecentTemplates();
+    } else {
+      templates = getTemplatesByCategory(selectedCategory);
+    }
+
+    if (templateSearch) {
+      templates = searchTemplates(templateSearch).filter(t => 
+        selectedCategory === "Popular" || 
+        selectedCategory === "Recent" || 
+        t.category === selectedCategory
+      );
+    }
+
+    return templates;
+  }, [selectedCategory, templateSearch]);
+
+  const categories = ['Popular', 'Recent', 'Print', 'Digital', 'Social Media', 'Web', 'Custom'];
 
   const handleColorChange = (color: string) => {
     setBackgroundColor(color);
@@ -107,92 +150,151 @@ export const ArtboardManager = ({
     setShowTemplateDialog(false);
     setCustomName("");
     setSelectedTemplate(null);
+    setTemplateSearch("");
   };
 
-  const categories = ['Print', 'Digital', 'Social Media', 'Web', 'Custom'];
+  const handleCopyArtboard = async () => {
+    if (!selectedArtboard) return;
+    await copyArtboard(selectedArtboard, fabricCanvas);
+  };
+
+  const handlePasteArtboard = async () => {
+    if (!onCreateArtboard) return;
+    await pasteArtboard(onCreateArtboard, fabricCanvas);
+  };
+
+  const handleDuplicateArtboard = async () => {
+    if (!selectedArtboard || !onCreateArtboard) return;
+    await duplicateArtboard(selectedArtboard, onCreateArtboard, fabricCanvas);
+  };
 
   if (!selectedArtboard) {
     return (
       <div className="w-80 bg-[hsl(var(--editor-panel))] border-l border-border p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold">Artboard Manager</h3>
-          {onCreateArtboard && (
-            <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="h-7 px-2">
-                  <Plus className="w-3 h-3 mr-1" />
-                  Novo
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Criar Nova Prancheta</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-xs">Nome (opcional)</Label>
-                    <Input
-                      value={customName}
-                      onChange={(e) => setCustomName(e.target.value)}
-                      placeholder="Nome da prancheta"
-                      className="text-xs h-8 mt-1"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label className="text-xs">Template</Label>
-                    <div className="space-y-3 mt-2 max-h-60 overflow-y-auto">
-                      {categories.map(category => {
-                        const templates = getTemplatesByCategory(category);
-                        return (
-                          <div key={category}>
-                            <div className="text-xs font-medium text-muted-foreground mb-2">
-                              {category}
-                            </div>
-                            <div className="grid grid-cols-1 gap-1">
-                              {templates.map(template => (
-                                <button
-                                  key={template.id}
-                                  onClick={() => setSelectedTemplate(template)}
-                                  className={`text-left p-2 rounded border text-xs hover:bg-muted transition-colors ${
-                                    selectedTemplate?.id === template.id 
-                                      ? 'border-primary bg-primary/5' 
-                                      : 'border-border'
-                                  }`}
-                                >
-                                  <div className="font-medium">{template.name}</div>
-                                  <div className="text-muted-foreground text-xs">
-                                    {template.description}
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
+          <div className="flex gap-1">
+            {onCreateArtboard && (
+              <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="h-7 px-2">
+                    <Plus className="w-3 h-3 mr-1" />
+                    Novo
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
+                  <DialogHeader>
+                    <DialogTitle>Criar Nova Prancheta</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-xs">Nome (opcional)</Label>
+                      <Input
+                        value={customName}
+                        onChange={(e) => setCustomName(e.target.value)}
+                        placeholder="Nome da prancheta"
+                        className="text-xs h-8 mt-1"
+                      />
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Label className="text-xs">Pesquisar</Label>
+                          <div className="relative">
+                            <Search className="absolute left-2 top-2 w-3 h-3 text-muted-foreground" />
+                            <Input
+                              value={templateSearch}
+                              onChange={(e) => setTemplateSearch(e.target.value)}
+                              placeholder="Buscar templates..."
+                              className="text-xs h-8 pl-7 mt-1"
+                            />
                           </div>
-                        );
-                      })}
+                        </div>
+                        <div>
+                          <Label className="text-xs">Categoria</Label>
+                          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                            <SelectTrigger className="w-32 h-8 text-xs mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map(category => (
+                                <SelectItem key={category} value={category}>
+                                  <div className="flex items-center gap-1">
+                                    {category === 'Popular' && <Star className="w-3 h-3" />}
+                                    {category === 'Recent' && <Clock className="w-3 h-3" />}
+                                    {category}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      
+                      <div className="max-h-80 overflow-y-auto">
+                        <div className="grid grid-cols-2 gap-2">
+                          {filteredTemplates.map(template => (
+                            <button
+                              key={template.id}
+                              onClick={() => setSelectedTemplate(template)}
+                              className={`text-left p-3 rounded border text-xs hover:bg-muted transition-colors ${
+                                selectedTemplate?.id === template.id 
+                                  ? 'border-primary bg-primary/5' 
+                                  : 'border-border'
+                              }`}
+                            >
+                              <div className="font-medium">{template.name}</div>
+                              <div className="text-muted-foreground text-xs">
+                                {template.description}
+                              </div>
+                              {template.tags && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {template.tags.slice(0, 2).map(tag => (
+                                    <span key={tag} className="bg-muted px-1 rounded text-xs">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => setShowTemplateDialog(false)}
+                        variant="outline" 
+                        className="flex-1"
+                      >
+                        Cancelar
+                      </Button>
+                      <Button 
+                        onClick={handleCreateFromTemplate}
+                        disabled={!selectedTemplate}
+                        className="flex-1"
+                      >
+                        Criar
+                      </Button>
                     </div>
                   </div>
-                  
-                  <div className="flex gap-2">
-                    <Button 
-                      onClick={() => setShowTemplateDialog(false)}
-                      variant="outline" 
-                      className="flex-1"
-                    >
-                      Cancelar
-                    </Button>
-                    <Button 
-                      onClick={handleCreateFromTemplate}
-                      disabled={!selectedTemplate}
-                      className="flex-1"
-                    >
-                      Criar
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
+                </DialogContent>
+              </Dialog>
+            )}
+            
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handlePasteArtboard}
+              disabled={!hasClipboard}
+              className="h-7 px-2"
+              title="Colar prancheta"
+            >
+              <ClipboardPaste className="w-3 h-3" />
+            </Button>
+          </div>
         </div>
         
         <p className="text-sm text-muted-foreground">Selecione uma prancheta para editar suas propriedades</p>
@@ -374,6 +476,37 @@ export const ArtboardManager = ({
 
       <Separator />
 
+      {/* Clipboard Actions */}
+      <div className="space-y-2">
+        <Label className="text-xs text-muted-foreground">Área de Transferência</Label>
+        
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCopyArtboard}
+            className="text-xs h-8"
+            disabled={isLocked}
+          >
+            <Clipboard className="w-3 h-3 mr-1" />
+            Copiar
+          </Button>
+          
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handlePasteArtboard}
+            disabled={!hasClipboard}
+            className="text-xs h-8"
+          >
+            <ClipboardPaste className="w-3 h-3 mr-1" />
+            Colar
+          </Button>
+        </div>
+      </div>
+
+      <Separator />
+
       {/* Actions */}
       <div className="space-y-2">
         <Label className="text-xs text-muted-foreground">Ações</Label>
@@ -382,7 +515,7 @@ export const ArtboardManager = ({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onDuplicateArtboard(selectedArtboard.id)}
+            onClick={handleDuplicateArtboard}
             className="text-xs h-8"
             disabled={isLocked}
           >

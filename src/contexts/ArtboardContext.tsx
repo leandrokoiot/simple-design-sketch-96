@@ -12,6 +12,7 @@ interface ArtboardContextType {
   handleUpdateArtboard: (id: string, updates: Partial<Artboard>) => void;
   handleDeleteArtboard: (id: string, fabricCanvas?: any) => void;
   findNextArtboardPosition: () => { x: number; y: number };
+  findOptimalPosition: (width: number, height: number) => { x: number; y: number };
 }
 
 const ArtboardContext = createContext<ArtboardContextType | null>(null);
@@ -36,7 +37,12 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
     setArtboards(prev => prev.map(ab => 
       ab.id === id ? { ...ab, ...updates } : ab
     ));
-  }, []);
+    
+    // Update selected artboard if it's the one being updated
+    if (selectedArtboard?.id === id) {
+      setSelectedArtboard(prev => prev ? { ...prev, ...updates } : null);
+    }
+  }, [selectedArtboard]);
 
   const handleDeleteArtboard = useCallback((id: string, fabricCanvas?: any) => {
     if (fabricCanvas) {
@@ -52,7 +58,7 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
     setArtboards(prev => prev.filter(ab => ab.id !== id));
     setSelectedArtboard(null);
     
-    toast("Artboard deleted!");
+    toast.success("Prancheta excluída!");
   }, []);
 
   const findNextArtboardPosition = useCallback(() => {
@@ -89,6 +95,41 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
     return { x: maxRight + buffer, y: 100 };
   }, [artboards]);
 
+  const findOptimalPosition = useCallback((width: number, height: number) => {
+    if (artboards.length === 0) {
+      return { x: 100, y: 100 };
+    }
+
+    const buffer = 50;
+    const gridSize = 50;
+    
+    // Try positions in a grid pattern
+    for (let row = 0; row < 10; row++) {
+      for (let col = 0; col < 10; col++) {
+        const x = 100 + col * (width + buffer);
+        const y = 100 + row * (height + buffer);
+        
+        // Check if this position overlaps with any existing artboard
+        const overlaps = artboards.some(artboard => {
+          return !(
+            x + width < artboard.x ||
+            artboard.x + artboard.width < x ||
+            y + height < artboard.y ||
+            artboard.y + artboard.height < y
+          );
+        });
+        
+        if (!overlaps) {
+          return { x, y };
+        }
+      }
+    }
+    
+    // Fallback: place to the right of all artboards
+    const maxRight = Math.max(...artboards.map(ab => ab.x + ab.width));
+    return { x: maxRight + buffer, y: 100 };
+  }, [artboards]);
+
   const value: ArtboardContextType = {
     artboards,
     setArtboards,
@@ -97,6 +138,7 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
     handleUpdateArtboard,
     handleDeleteArtboard,
     findNextArtboardPosition,
+    findOptimalPosition,
   };
 
   return (
