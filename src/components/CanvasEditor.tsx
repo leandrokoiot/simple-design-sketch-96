@@ -291,19 +291,17 @@ export const CanvasEditor = () => {
     (artboardLabel as any).isArtboard = true;
     (artboardLabel as any).artboardId = newArtboard.id;
 
-    // Add drag constraints and collision detection
+    // Fix the event handler - use the artboard object directly instead of e.target
     artboardRect.on('moving', (e) => {
-      const obj = e.target as FabricObject;
-      const newPos = checkArtboardCollision(newArtboard, obj.left || 0, obj.top || 0);
-      obj.set({ left: newPos.x, top: newPos.y });
+      const artboardObj = artboardRect; // Use the artboard object directly
+      const newPos = checkArtboardCollision(newArtboard, artboardObj.left || 0, artboardObj.top || 0);
+      artboardObj.set({ left: newPos.x, top: newPos.y });
       
-      // Update label position
       artboardLabel.set({
         left: newPos.x + 10,
         top: newPos.y - 30
       });
       
-      // Update artboard data
       newArtboard.x = newPos.x;
       newArtboard.y = newPos.y;
     });
