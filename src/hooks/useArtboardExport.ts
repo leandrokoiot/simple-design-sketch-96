@@ -1,5 +1,5 @@
 
-import { FabricCanvas, FabricObject } from "fabric";
+import { Canvas as FabricCanvas, FabricObject } from "fabric";
 import { Artboard } from "@/utils/projectState";
 import { toast } from "sonner";
 

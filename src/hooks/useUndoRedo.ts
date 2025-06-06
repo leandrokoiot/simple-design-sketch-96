@@ -1,6 +1,6 @@
 
 import { useState, useCallback, useRef } from 'react';
-import { FabricCanvas } from 'fabric';
+import { Canvas as FabricCanvas } from 'fabric';
 import { toast } from 'sonner';
 
 interface HistoryState {

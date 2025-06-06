@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import { FabricCanvas, FabricObject } from 'fabric';
+import { Canvas as FabricCanvas, FabricObject } from 'fabric';
 import { toast } from 'sonner';
 
 export interface LayerInfo {
