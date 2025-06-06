@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { FabricObject } from "fabric";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
 
 interface PropertiesPanelProps {
   selectedObject: FabricObject;
@@ -55,13 +54,19 @@ export const PropertiesPanel = ({ selectedObject, onUpdate }: PropertiesPanelPro
   };
 
   const handleBringToFront = () => {
-    selectedObject.bringToFront();
-    onUpdate({});
+    const canvas = selectedObject.canvas;
+    if (canvas) {
+      canvas.bringObjectToFront(selectedObject);
+      onUpdate({});
+    }
   };
 
   const handleSendToBack = () => {
-    selectedObject.sendToBack();
-    onUpdate({});
+    const canvas = selectedObject.canvas;
+    if (canvas) {
+      canvas.sendObjectToBack(selectedObject);
+      onUpdate({});
+    }
   };
 
   return (

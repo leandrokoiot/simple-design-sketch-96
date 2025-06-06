@@ -1,6 +1,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject } from "fabric";
+import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, Point } from "fabric";
 import { Toolbar } from "./Toolbar";
 import { ZoomControls } from "./ZoomControls";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -24,7 +24,7 @@ export const CanvasEditor = () => {
     const canvasHeight = canvas.height || 800;
     
     // Clear existing grid
-    const existingGrid = canvas.getObjects().filter(obj => obj.name === 'grid-line');
+    const existingGrid = canvas.getObjects().filter(obj => (obj as any).isGridLine);
     existingGrid.forEach(line => canvas.remove(line));
 
     // Draw vertical lines
@@ -34,10 +34,10 @@ export const CanvasEditor = () => {
         strokeWidth: 1,
         selectable: false,
         evented: false,
-        name: 'grid-line'
       });
+      (line as any).isGridLine = true;
       canvas.add(line);
-      canvas.sendToBack(line);
+      canvas.sendObjectToBack(line);
     }
 
     // Draw horizontal lines
@@ -47,10 +47,10 @@ export const CanvasEditor = () => {
         strokeWidth: 1,
         selectable: false,
         evented: false,
-        name: 'grid-line'
       });
+      (line as any).isGridLine = true;
       canvas.add(line);
-      canvas.sendToBack(line);
+      canvas.sendObjectToBack(line);
     }
   }, [showGrid, gridSize]);
 
@@ -88,7 +88,8 @@ export const CanvasEditor = () => {
       if (zoom > 3) zoom = 3;
       if (zoom < 0.25) zoom = 0.25;
       
-      canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+      const point = new Point(opt.e.offsetX, opt.e.offsetY);
+      canvas.zoomToPoint(point, zoom);
       setZoom(Math.round(zoom * 100));
       opt.e.preventDefault();
       opt.e.stopPropagation();
@@ -104,21 +105,25 @@ export const CanvasEditor = () => {
       if (evt.altKey === true || evt.shiftKey === true) {
         isDragging = true;
         canvas.selection = false;
-        lastPosX = evt.clientX;
-        lastPosY = evt.clientY;
+        if (evt instanceof MouseEvent) {
+          lastPosX = evt.clientX;
+          lastPosY = evt.clientY;
+        }
       }
     });
 
     canvas.on('mouse:move', (opt) => {
       if (isDragging) {
         const e = opt.e;
-        const vpt = canvas.viewportTransform;
-        if (vpt) {
-          vpt[4] += e.clientX - lastPosX;
-          vpt[5] += e.clientY - lastPosY;
-          canvas.requestRenderAll();
-          lastPosX = e.clientX;
-          lastPosY = e.clientY;
+        if (e instanceof MouseEvent) {
+          const vpt = canvas.viewportTransform;
+          if (vpt) {
+            vpt[4] += e.clientX - lastPosX;
+            vpt[5] += e.clientY - lastPosY;
+            canvas.requestRenderAll();
+            lastPosX = e.clientX;
+            lastPosY = e.clientY;
+          }
         }
       }
     });
@@ -310,7 +315,7 @@ export const CanvasEditor = () => {
     if (!fabricCanvas) return;
     
     // Remove all objects except grid lines
-    const objects = fabricCanvas.getObjects().filter(obj => obj.name !== 'grid-line');
+    const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine);
     objects.forEach(obj => fabricCanvas.remove(obj));
     fabricCanvas.backgroundColor = "#ffffff";
     fabricCanvas.renderAll();
@@ -320,7 +325,7 @@ export const CanvasEditor = () => {
   const handleDelete = () => {
     if (!fabricCanvas) return;
     const activeObject = fabricCanvas.getActiveObject();
-    if (activeObject && activeObject.name !== 'grid-line') {
+    if (activeObject && !(activeObject as any).isGridLine) {
       fabricCanvas.remove(activeObject);
       fabricCanvas.renderAll();
       setSelectedObject(null);
@@ -331,7 +336,7 @@ export const CanvasEditor = () => {
   const handleCopy = () => {
     if (!fabricCanvas) return;
     const activeObject = fabricCanvas.getActiveObject();
-    if (activeObject && activeObject.name !== 'grid-line') {
+    if (activeObject && !(activeObject as any).isGridLine) {
       // Store in a simple way for now
       (window as any).copiedObject = activeObject.toObject();
       toast("Object copied! Press Ctrl+V to paste");
