@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 import { Canvas as FabricCanvas, Point } from "fabric";
 import { useCanvas } from "@/contexts/CanvasContext";
 import { useEditor } from "@/contexts/EditorContext";
+import { useArtboards } from "@/contexts/ArtboardContext";
+import { useArtboardSystem } from "@/hooks/useArtboardSystem";
 
 export const CanvasManager = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -14,6 +16,8 @@ export const CanvasManager = () => {
     handleZoomChange 
   } = useCanvas();
   const { activeTool } = useEditor();
+  const { artboards } = useArtboards();
+  const { setupElementMovement } = useArtboardSystem(fabricCanvas);
 
   useEffect(() => {
     if (!canvasRef.current || fabricCanvas) return;
@@ -63,9 +67,31 @@ export const CanvasManager = () => {
       setSelectedObject(null);
     };
 
+    // Object added event - setup element movement
+    const handleObjectAdded = (e: any) => {
+      const obj = e.target;
+      if (obj && !(obj as any).isArtboard) {
+        const cleanup = setupElementMovement(obj, artboards);
+        (obj as any).elementCleanup = cleanup;
+      }
+    };
+
+    // Object removed event - cleanup
+    const handleObjectRemoved = (e: any) => {
+      const obj = e.target;
+      if ((obj as any).elementCleanup) {
+        (obj as any).elementCleanup();
+      }
+      if ((obj as any).cleanupMovement) {
+        (obj as any).cleanupMovement();
+      }
+    };
+
     canvas.on('selection:created', handleSelectionCreated);
     canvas.on('selection:updated', handleSelectionUpdated);
     canvas.on('selection:cleared', handleSelectionCleared);
+    canvas.on('object:added', handleObjectAdded);
+    canvas.on('object:removed', handleObjectRemoved);
 
     setFabricCanvas(canvas);
     console.log("Canvas initialized successfully");
@@ -75,6 +101,8 @@ export const CanvasManager = () => {
       canvas.off('selection:created', handleSelectionCreated);
       canvas.off('selection:updated', handleSelectionUpdated);
       canvas.off('selection:cleared', handleSelectionCleared);
+      canvas.off('object:added', handleObjectAdded);
+      canvas.off('object:removed', handleObjectRemoved);
       canvas.dispose();
     };
   }, []);
@@ -84,6 +112,21 @@ export const CanvasManager = () => {
     if (!fabricCanvas) return;
     fabricCanvas.isDrawingMode = activeTool === "draw";
   }, [activeTool, fabricCanvas]);
+
+  // Update element associations when artboards change
+  useEffect(() => {
+    if (!fabricCanvas) return;
+    
+    const objects = fabricCanvas.getObjects();
+    objects.forEach(obj => {
+      if (!(obj as any).isArtboard && (obj as any).elementCleanup) {
+        // Cleanup and re-setup with updated artboards
+        (obj as any).elementCleanup();
+        const cleanup = setupElementMovement(obj, artboards);
+        (obj as any).elementCleanup = cleanup;
+      }
+    });
+  }, [artboards, fabricCanvas, setupElementMovement]);
 
   return <canvas ref={canvasRef} className="absolute inset-0" />;
 };

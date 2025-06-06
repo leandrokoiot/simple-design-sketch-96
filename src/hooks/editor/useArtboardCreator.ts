@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 import { Rect, FabricText } from 'fabric';
 import { useCanvas } from '@/contexts/CanvasContext';
 import { useArtboards } from '@/contexts/ArtboardContext';
+import { useArtboardSystem } from '@/hooks/useArtboardSystem';
 import { Artboard } from '@/utils/projectState';
 import { toast } from 'sonner';
 
@@ -14,6 +15,8 @@ export const useArtboardCreator = () => {
     setSelectedArtboard, 
     findNextArtboardPosition 
   } = useArtboards();
+  
+  const { applyArtboardRepulsion, setupArtboardMovement } = useArtboardSystem(fabricCanvas);
 
   const createArtboard = useCallback((artboardData: Omit<Artboard, 'id'>) => {
     if (!fabricCanvas) return;
@@ -35,13 +38,16 @@ export const useArtboardCreator = () => {
       elementIds: []
     };
 
-    // Create artboard visual
+    // Aplica repulsão antes de criar
+    const repulsedArtboard = applyArtboardRepulsion(newArtboard, artboards);
+
+    // Create artboard visual with repulsed position
     const artboardRect = new Rect({
-      left: newArtboard.x,
-      top: newArtboard.y,
-      width: newArtboard.width,
-      height: newArtboard.height,
-      fill: newArtboard.backgroundColor || '#ffffff',
+      left: repulsedArtboard.x,
+      top: repulsedArtboard.y,
+      width: repulsedArtboard.width,
+      height: repulsedArtboard.height,
+      fill: repulsedArtboard.backgroundColor || '#ffffff',
       stroke: '#3b82f6',
       strokeWidth: 2 / (zoom / 100),
       strokeDashArray: [8, 4],
@@ -51,9 +57,9 @@ export const useArtboardCreator = () => {
       ry: 4,
     });
 
-    const artboardLabel = new FabricText(newArtboard.name, {
-      left: newArtboard.x + 12,
-      top: newArtboard.y - 35,
+    const artboardLabel = new FabricText(repulsedArtboard.name, {
+      left: repulsedArtboard.x + 12,
+      top: repulsedArtboard.y - 35,
       fontSize: 14 / (zoom / 100),
       fontFamily: 'Inter, sans-serif',
       fontWeight: 'bold',
@@ -62,28 +68,51 @@ export const useArtboardCreator = () => {
       evented: false,
     });
 
+    // Adiciona propriedades customizadas
     (artboardRect as any).isArtboard = true;
-    (artboardRect as any).artboardId = newArtboard.id;
-    (artboardRect as any).artboardData = newArtboard;
+    (artboardRect as any).artboardId = repulsedArtboard.id;
+    (artboardRect as any).artboardData = repulsedArtboard;
     (artboardLabel as any).isArtboard = true;
-    (artboardLabel as any).artboardId = newArtboard.id;
+    (artboardLabel as any).artboardId = repulsedArtboard.id;
 
+    // Configura seleção
     artboardRect.on('selected', () => {
-      setSelectedArtboard(newArtboard);
-      console.log(`Artboard selected: ${newArtboard.name}`);
+      setSelectedArtboard(repulsedArtboard);
+      console.log(`Artboard selected: ${repulsedArtboard.name}`);
     });
 
+    // Adiciona ao canvas
     fabricCanvas.add(artboardRect);
     fabricCanvas.add(artboardLabel);
     fabricCanvas.sendObjectToBack(artboardRect);
 
-    fabricCanvas.renderAll();
-    setArtboards(prev => [...prev, newArtboard]);
-    setSelectedArtboard(newArtboard);
+    // Configura sistema de movimento
+    const cleanupMovement = setupArtboardMovement(
+      artboardRect, 
+      repulsedArtboard, 
+      artboards, 
+      setArtboards
+    );
+
+    // Adiciona animação de entrada suave
+    artboardRect.set({ opacity: 0, scaleX: 0.8, scaleY: 0.8 });
+    artboardLabel.set({ opacity: 0 });
     
-    console.log(`Artboard created: ${newArtboard.name}`);
-    toast(`Prancheta "${newArtboard.name}" criada!`);
-  }, [fabricCanvas, zoom, findNextArtboardPosition, setArtboards, setSelectedArtboard]);
+    artboardRect.animate('opacity', 1, { duration: 300 });
+    artboardRect.animate('scaleX', 1, { duration: 300 });
+    artboardRect.animate('scaleY', 1, { duration: 300 });
+    artboardLabel.animate('opacity', 1, { duration: 300 });
+
+    fabricCanvas.renderAll();
+    setArtboards(prev => [...prev, repulsedArtboard]);
+    setSelectedArtboard(repulsedArtboard);
+    
+    console.log(`Artboard created: ${repulsedArtboard.name}`);
+    toast(`Prancheta "${repulsedArtboard.name}" criada!`);
+
+    // Armazena cleanup function para uso posterior
+    (artboardRect as any).cleanupMovement = cleanupMovement;
+  }, [fabricCanvas, zoom, findNextArtboardPosition, setArtboards, setSelectedArtboard, artboards, applyArtboardRepulsion, setupArtboardMovement]);
 
   return {
     createArtboard
