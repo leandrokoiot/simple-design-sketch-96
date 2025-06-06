@@ -2,34 +2,26 @@
 import { useCallback } from 'react';
 import { FabricObject, Canvas as FabricCanvas } from 'fabric';
 import { useCommandSystem } from './useCommandSystem';
-import { AddObjectCommand, RemoveObjectCommand, ModifyObjectCommand, MoveObjectCommand, BatchCommand } from '@/commands/CanvasCommands';
+import { 
+  createAddObjectCommand, 
+  createDeleteObjectCommand, 
+  createMoveObjectCommand 
+} from '@/commands/CanvasCommands';
 
 export const useCanvasCommands = (canvas: FabricCanvas | null) => {
   const { executeCommand } = useCommandSystem(canvas);
 
-  const addObject = useCallback(async (object: FabricObject, index?: number) => {
+  const addObject = useCallback(async (object: FabricObject) => {
     if (!canvas) return;
     
-    const command = new AddObjectCommand(canvas, object, { index });
+    const command = createAddObjectCommand(canvas, object);
     await executeCommand(command);
   }, [canvas, executeCommand]);
 
   const removeObject = useCallback(async (object: FabricObject) => {
     if (!canvas) return;
     
-    const command = new RemoveObjectCommand(canvas, object);
-    await executeCommand(command);
-  }, [canvas, executeCommand]);
-
-  const modifyObject = useCallback(async (
-    object: FabricObject, 
-    oldProps: Partial<FabricObject>, 
-    newProps: Partial<FabricObject>,
-    description?: string
-  ) => {
-    if (!canvas) return;
-    
-    const command = new ModifyObjectCommand(canvas, object, oldProps, newProps, description);
+    const command = createDeleteObjectCommand(canvas, object);
     await executeCommand(command);
   }, [canvas, executeCommand]);
 
@@ -40,22 +32,13 @@ export const useCanvasCommands = (canvas: FabricCanvas | null) => {
   ) => {
     if (!canvas) return;
     
-    const command = new MoveObjectCommand(canvas, object, oldPosition, newPosition);
+    const command = createMoveObjectCommand(canvas, object, oldPosition, newPosition);
     await executeCommand(command);
-  }, [canvas, executeCommand]);
-
-  const batchExecute = useCallback(async (commands: any[], description?: string) => {
-    if (!canvas || commands.length === 0) return;
-    
-    const batchCommand = new BatchCommand(commands, description);
-    await executeCommand(batchCommand);
   }, [canvas, executeCommand]);
 
   return {
     addObject,
     removeObject,
-    modifyObject,
-    moveObject,
-    batchExecute
+    moveObject
   };
 };
