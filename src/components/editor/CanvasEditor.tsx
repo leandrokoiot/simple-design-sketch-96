@@ -17,7 +17,7 @@ import { ArtboardProvider, useArtboards } from "@/contexts/ArtboardContext";
 import { EditorProvider, useEditor } from "@/contexts/EditorContext";
 
 import { useEditorTools } from "@/hooks/editor/useEditorTools";
-import { useCommandSystem } from "@/hooks/useCommandSystem";
+import { useUnifiedCommandSystem } from "@/hooks/useUnifiedCommandSystem";
 import { useLayerSystem } from "@/hooks/useLayerSystem";
 import { useArtboardCreator } from "@/hooks/editor/useArtboardCreator";
 import { useKeyboardShortcuts } from "@/hooks/editor/useKeyboardShortcuts";
@@ -45,7 +45,7 @@ const CanvasEditorContent = () => {
     redo,
     canUndo,
     canRedo,
-  } = useCommandSystem(fabricCanvas);
+  } = useUnifiedCommandSystem(fabricCanvas);
 
   const { 
     layers, 

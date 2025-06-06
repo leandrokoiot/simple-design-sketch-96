@@ -1,7 +1,8 @@
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { FabricObject, Canvas as FabricCanvas } from 'fabric';
 import { toast } from 'sonner';
+import { useObjectId } from './useObjectId';
 
 export interface LayerInfo {
   id: string;
@@ -15,11 +16,7 @@ export interface LayerInfo {
 
 export const useLayerSystem = (canvas: FabricCanvas | null) => {
   const [layers, setLayers] = useState<LayerInfo[]>([]);
-  const layerIdCounterRef = useRef(0);
-
-  const generateLayerId = useCallback(() => {
-    return `layer_${++layerIdCounterRef.current}`;
-  }, []);
+  const { generateLayerId } = useObjectId();
 
   const getLayerName = useCallback((obj: FabricObject, index: number) => {
     const typeNames = {

@@ -2,12 +2,12 @@
 import { useEffect } from 'react';
 import { useCanvas } from '@/contexts/CanvasContext';
 import { useEditor } from '@/contexts/EditorContext';
-import { useUndoRedo } from '@/hooks/useUndoRedo';
+import { useUnifiedCommandSystem } from '@/hooks/useUnifiedCommandSystem';
 
 export const useKeyboardShortcuts = () => {
   const { handleDelete, handleCopy, handlePaste, fabricCanvas } = useCanvas();
   const { isCreatingElement, setIsCreatingElement } = useEditor();
-  const { undo, redo } = useUndoRedo(fabricCanvas);
+  const { undo, redo } = useUnifiedCommandSystem(fabricCanvas);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

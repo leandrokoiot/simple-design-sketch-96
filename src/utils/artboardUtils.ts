@@ -1,5 +1,5 @@
 
-import { FabricObject, Point } from "fabric";
+import { FabricObject } from "fabric";
 import { Artboard } from "./projectState";
 
 export interface ArtboardElement {
@@ -51,30 +51,29 @@ export const constrainElementToArtboard = (element: FabricObject, artboard: Artb
   }
 };
 
+// Simplified and optimized repulsion system
 export const calculateRepulsionForce = (
   movingArtboard: Artboard, 
   staticArtboard: Artboard, 
-  repulsionDistance: number = 150
+  repulsionDistance: number = 120
 ): { x: number; y: number } => {
   const centerX1 = movingArtboard.x + movingArtboard.width / 2;
   const centerY1 = movingArtboard.y + movingArtboard.height / 2;
   const centerX2 = staticArtboard.x + staticArtboard.width / 2;
   const centerY2 = staticArtboard.y + staticArtboard.height / 2;
   
-  const distance = Math.sqrt(Math.pow(centerX1 - centerX2, 2) + Math.pow(centerY1 - centerY2, 2));
+  const dx = centerX1 - centerX2;
+  const dy = centerY1 - centerY2;
+  const distance = Math.sqrt(dx * dx + dy * dy);
   
   if (distance < repulsionDistance && distance > 0) {
-    // Força de repulsão mais suave
-    const force = Math.pow((repulsionDistance - distance) / repulsionDistance, 2) * 0.3;
-    const angle = Math.atan2(centerY1 - centerY2, centerX1 - centerX2);
-    
-    // Aplicar força mínima para evitar sobreposição
-    const minForce = distance < 50 ? 50 : 0;
-    const totalForce = Math.max(force * 100, minForce);
+    const force = Math.min((repulsionDistance - distance) / repulsionDistance * 0.5, 1);
+    const normalizedX = dx / distance;
+    const normalizedY = dy / distance;
     
     return {
-      x: Math.cos(angle) * totalForce,
-      y: Math.sin(angle) * totalForce
+      x: normalizedX * force * 80,
+      y: normalizedY * force * 80
     };
   }
   
@@ -98,14 +97,15 @@ export const getArtboardsOverlapping = (artboard: Artboard, allArtboards: Artboa
   });
 };
 
+// Simplified position finding algorithm
 export const findOptimalPosition = (
   artboard: Artboard,
   allArtboards: Artboard[],
-  minDistance: number = 80
+  minDistance: number = 60
 ): { x: number; y: number } => {
   let bestPosition = { x: artboard.x, y: artboard.y };
   let iterations = 0;
-  const maxIterations = 20;
+  const maxIterations = 10; // Reduced from 20
   
   while (iterations < maxIterations) {
     const overlapping = getArtboardsOverlapping(
@@ -122,7 +122,7 @@ export const findOptimalPosition = (
       const repulsion = calculateRepulsionForce(
         { ...artboard, x: bestPosition.x, y: bestPosition.y },
         other,
-        minDistance + Math.max(artboard.width, artboard.height) / 2
+        minDistance + Math.max(artboard.width, artboard.height) / 3
       );
       totalForceX += repulsion.x;
       totalForceY += repulsion.y;
@@ -131,9 +131,9 @@ export const findOptimalPosition = (
     bestPosition.x += totalForceX;
     bestPosition.y += totalForceY;
     
-    // Evita posições negativas
-    bestPosition.x = Math.max(50, bestPosition.x);
-    bestPosition.y = Math.max(50, bestPosition.y);
+    // Ensure positive positions with minimum padding
+    bestPosition.x = Math.max(30, bestPosition.x);
+    bestPosition.y = Math.max(30, bestPosition.y);
     
     iterations++;
   }
