@@ -7,10 +7,12 @@ import { useViewport } from "@/contexts/ViewportContext";
 import { useEditor } from "@/contexts/EditorContext";
 import { useArtboards } from "@/contexts/ArtboardContext";
 import { useArtboardSystem } from "@/hooks/useArtboardSystem";
+import { useObjectId } from "@/hooks/useObjectId";
 
 export const CanvasManager = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cleanupFunctionsRef = useRef<Map<string, () => void>>(new Map());
+  const { generateElementId } = useObjectId();
   
   const { 
     fabricCanvas, 
@@ -44,27 +46,36 @@ export const CanvasManager = () => {
     canvas.selection = true;
     canvas.preserveObjectStacking = true;
 
-    // Enhanced mouse wheel zoom with throttling
+    // Optimized mouse wheel zoom with better throttling
     let zoomTimeout: NodeJS.Timeout | null = null;
+    let lastZoomTime = 0;
+    
     canvas.on('mouse:wheel', (opt) => {
-      if (zoomTimeout) return;
+      const now = Date.now();
+      if (now - lastZoomTime < 50) return; // Throttle to 20fps
       
-      const delta = opt.e.deltaY;
-      let newZoom = zoom;
+      lastZoomTime = now;
       
-      const zoomStep = zoom < 100 ? 5 : zoom < 200 ? 10 : 25;
-      
-      if (delta > 0) {
-        newZoom = Math.max(10, zoom - zoomStep);
-      } else {
-        newZoom = Math.min(500, zoom + zoomStep);
-      }
-      
-      if (newZoom !== zoom) {
-        handleZoomChange(newZoom, canvas);
+      if (zoomTimeout) {
+        clearTimeout(zoomTimeout);
       }
       
       zoomTimeout = setTimeout(() => {
+        const delta = opt.e.deltaY;
+        let newZoom = zoom;
+        
+        const zoomStep = zoom < 100 ? 5 : zoom < 200 ? 10 : 25;
+        
+        if (delta > 0) {
+          newZoom = Math.max(10, zoom - zoomStep);
+        } else {
+          newZoom = Math.min(500, zoom + zoomStep);
+        }
+        
+        if (newZoom !== zoom) {
+          handleZoomChange(newZoom, canvas);
+        }
+        
         zoomTimeout = null;
       }, 16);
       
@@ -72,7 +83,7 @@ export const CanvasManager = () => {
       opt.e.stopPropagation();
     });
 
-    // Object selection events
+    // Object selection events with performance optimization
     const handleSelectionCreated = (e: any) => {
       setSelectedObject(e.selected?.[0] || null);
       console.log("Object selected:", e.selected?.[0]?.type);
@@ -86,14 +97,18 @@ export const CanvasManager = () => {
       clearSelection();
     };
 
-    // Object lifecycle events
+    // Optimized object lifecycle events
     const handleObjectAdded = (e: any) => {
       const obj = e.target;
       if (obj && !(obj as any).isArtboard) {
+        // Ensure unique ID
+        if (!(obj as any).id) {
+          (obj as any).id = generateElementId();
+        }
+        
         const cleanup = setupElementMovement(obj, artboards);
         if (cleanup) {
-          const objId = (obj as any).id || `obj-${Date.now()}`;
-          (obj as any).id = objId;
+          const objId = (obj as any).id;
           cleanupFunctionsRef.current.set(objId, cleanup);
         }
       }

@@ -2,20 +2,26 @@
 import { useCallback, useRef } from 'react';
 import { Canvas, FabricObject } from 'fabric';
 import { Artboard } from '@/utils/projectState';
-import { calculateRepulsionForce } from '@/utils/artboardUtils';
+import { 
+  calculateRepulsionForce, 
+  updateArtboardInSpatialGrid,
+  clearCaches 
+} from '@/utils/artboardUtils';
 
 export const useArtboardMovement = (canvas: Canvas | null) => {
   const animationFramesRef = useRef<Map<string, number>>(new Map());
+  const lastUpdateRef = useRef<Map<string, number>>(new Map());
+  const THROTTLE_DELAY = 32; // ~30fps for better performance
 
-  // Cleanup function for animations
   const cleanup = useCallback(() => {
     animationFramesRef.current.forEach(frameId => {
       cancelAnimationFrame(frameId);
     });
     animationFramesRef.current.clear();
+    lastUpdateRef.current.clear();
+    clearCaches();
   }, []);
 
-  // Sincroniza o label da prancheta com sua posição
   const syncArtboardLabel = useCallback((artboardRect: FabricObject, artboard: Artboard) => {
     if (!canvas) return;
     
@@ -34,7 +40,6 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
     }
   }, [canvas]);
 
-  // Aplica repulsão entre pranchetas com otimização
   const applyArtboardRepulsion = useCallback((movingArtboard: Artboard, allArtboards: Artboard[]) => {
     if (!canvas) return movingArtboard;
 
@@ -43,7 +48,8 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
     let totalForceX = 0;
     let totalForceY = 0;
     
-    // Limitar verificações apenas para artboards próximos
+    // Use spatial partitioning - only check nearby artboards
+    const maxCheckDistance = 250;
     const nearbyArtboards = allArtboards.filter(staticArtboard => {
       if (staticArtboard.id === movingArtboard.id) return false;
       
@@ -52,30 +58,38 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
         Math.pow(movingArtboard.y - staticArtboard.y, 2)
       );
       
-      return distance < 300; // Só verificar artboards próximos
+      return distance < maxCheckDistance;
     });
 
     nearbyArtboards.forEach(staticArtboard => {
       const repulsion = calculateRepulsionForce(
         { ...movingArtboard, x: newX, y: newY }, 
         staticArtboard, 
-        120 // Reduzir distância de repulsão para performance
+        100
       );
       
       totalForceX += repulsion.x;
       totalForceY += repulsion.y;
     });
 
-    // Aplicar força com damping para evitar oscilações
-    const damping = 0.8;
+    const damping = 0.6; // Reduced for smoother movement
     newX += totalForceX * damping;
     newY += totalForceY * damping;
 
-    return { ...movingArtboard, x: newX, y: newY };
+    const updatedArtboard = { ...movingArtboard, x: newX, y: newY };
+    
+    // Update spatial grid
+    updateArtboardInSpatialGrid(updatedArtboard);
+    
+    return updatedArtboard;
   }, [canvas]);
 
-  // Configura eventos de movimento para pranchetas
-  const setupArtboardMovement = useCallback((artboardRect: FabricObject, artboard: Artboard, allArtboards: Artboard[], updateArtboards: (updater: (prev: Artboard[]) => Artboard[]) => void) => {
+  const setupArtboardMovement = useCallback((
+    artboardRect: FabricObject, 
+    artboard: Artboard, 
+    allArtboards: Artboard[], 
+    updateArtboards: (updater: (prev: Artboard[]) => Artboard[]) => void
+  ) => {
     if (!canvas) return;
 
     const artboardId = artboard.id;
@@ -83,9 +97,16 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
 
     const onMoving = () => {
       if (isMoving) return;
-      isMoving = true;
       
-      // Cancel previous animation frame
+      const now = Date.now();
+      const lastUpdate = lastUpdateRef.current.get(artboardId) || 0;
+      
+      // Throttle updates for better performance
+      if (now - lastUpdate < THROTTLE_DELAY) return;
+      
+      isMoving = true;
+      lastUpdateRef.current.set(artboardId, now);
+      
       const existingFrame = animationFramesRef.current.get(artboardId);
       if (existingFrame) {
         cancelAnimationFrame(existingFrame);
@@ -98,16 +119,13 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
           y: artboardRect.top || 0
         };
         
-        // Aplica repulsão
         const repulsedArtboard = applyArtboardRepulsion(updatedArtboard, allArtboards);
         
-        // Atualiza posição com repulsão suave apenas se necessário
         const hasRepulsion = repulsedArtboard.x !== updatedArtboard.x || repulsedArtboard.y !== updatedArtboard.y;
         
         if (hasRepulsion) {
-          // Fixed animation call for Fabric.js v6
           artboardRect.animate({ left: repulsedArtboard.x }, {
-            duration: 200,
+            duration: 150, // Reduced duration for snappier response
             onChange: () => {
               syncArtboardLabel(artboardRect, repulsedArtboard);
               canvas?.renderAll();
@@ -115,7 +133,7 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
           });
           
           artboardRect.animate({ top: repulsedArtboard.y }, {
-            duration: 200,
+            duration: 150,
             onChange: () => {
               syncArtboardLabel(artboardRect, repulsedArtboard);
               canvas?.renderAll();
@@ -125,7 +143,6 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
           syncArtboardLabel(artboardRect, updatedArtboard);
         }
         
-        // Atualiza estado
         updateArtboards(prev => prev.map(ab => 
           ab.id === artboard.id ? repulsedArtboard : ab
         ));
@@ -138,7 +155,6 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
     };
 
     const onModified = () => {
-      // Sincroniza após modificação completa
       syncArtboardLabel(artboardRect, {
         ...artboard,
         x: artboardRect.left || 0,
@@ -153,12 +169,12 @@ export const useArtboardMovement = (canvas: Canvas | null) => {
       artboardRect.off('moving', onMoving);
       artboardRect.off('modified', onModified);
       
-      // Cleanup animation frames for this artboard
       const frameId = animationFramesRef.current.get(artboardId);
       if (frameId) {
         cancelAnimationFrame(frameId);
         animationFramesRef.current.delete(artboardId);
       }
+      lastUpdateRef.current.delete(artboardId);
     };
   }, [canvas, syncArtboardLabel, applyArtboardRepulsion]);
 
