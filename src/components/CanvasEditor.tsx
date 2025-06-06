@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, Point, Group, FabricImage } from "fabric";
+import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, Point } from "fabric";
 import { MinimalSidebar } from "./MinimalSidebar";
 import { MinimalLayersPanel } from "./MinimalLayersPanel";
 import { MinimalPropertiesPanel } from "./MinimalPropertiesPanel";
@@ -16,6 +16,11 @@ import {
   getArtboardById
 } from "@/utils/artboardUtils";
 import { toast } from "sonner";
+import { useArtboardExport } from "@/hooks/useArtboardExport";
+import { useLayerSystem } from "@/hooks/useLayerSystem";
+import { useUndoRedo } from "@/hooks/useUndoRedo";
+import { Undo, Redo } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export const CanvasEditor = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,6 +41,30 @@ export const CanvasEditor = () => {
   const { createNewVersion } = useVersionControl();
 
   const gridSize = 20;
+
+  // NEW: Import new hooks
+  const { exportArtboard } = useArtboardExport();
+  const { 
+    layers, 
+    updateLayers, 
+    toggleLayerVisibility, 
+    toggleLayerLock, 
+    setLayerOpacity,
+    moveLayerUp,
+    moveLayerDown,
+    duplicateLayer,
+    deleteLayer,
+    selectLayer
+  } = useLayerSystem(fabricCanvas);
+  
+  const {
+    saveState,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    initializeHistory
+  } = useUndoRedo(fabricCanvas);
 
   // Copy/Paste/Delete handlers
   const handleCopy = useCallback(() => {
@@ -186,9 +215,9 @@ export const CanvasEditor = () => {
     handleZoomChange(Math.max(10, Math.min(500, newZoom)));
   }, [fabricCanvas, handleZoomChange]);
 
-  // IMPLEMENTED: Enhanced artboard collision with REAL repulsion animation
+  // ENHANCED: Improved artboard collision with better repulsion animation
   const checkArtboardCollisionWithRepulsion = useCallback((movingArtboard: Artboard, newX: number, newY: number) => {
-    const buffer = 100; // Increased buffer for better repulsion
+    const buffer = 120; // Increased buffer for smoother repulsion
     let finalX = newX;
     let finalY = newY;
     let hasRepulsion = false;
@@ -196,41 +225,90 @@ export const CanvasEditor = () => {
     for (const artboard of artboards) {
       if (artboard.id === movingArtboard.id) continue;
       
-      // Calculate distance between centers
-      const centerX1 = newX + movingArtboard.width / 2;
-      const centerY1 = newY + movingArtboard.height / 2;
-      const centerX2 = artboard.x + artboard.width / 2;
-      const centerY2 = artboard.y + artboard.height / 2;
+      // Skip locked artboards for collision
+      if ((artboard as any).isLocked) continue;
       
-      const distance = Math.sqrt(
-        Math.pow(centerX1 - centerX2, 2) + Math.pow(centerY1 - centerY2, 2)
+      // Calculate distance between edges (more accurate than centers)
+      const rect1 = { 
+        left: newX, 
+        top: newY, 
+        right: newX + movingArtboard.width, 
+        bottom: newY + movingArtboard.height 
+      };
+      const rect2 = { 
+        left: artboard.x, 
+        top: artboard.y, 
+        right: artboard.x + artboard.width, 
+        bottom: artboard.y + artboard.height 
+      };
+      
+      // Check for overlap or proximity
+      const overlapX = Math.max(0, Math.min(rect1.right, rect2.right) - Math.max(rect1.left, rect2.left));
+      const overlapY = Math.max(0, Math.min(rect1.bottom, rect2.bottom) - Math.max(rect1.top, rect2.top));
+      
+      // Calculate minimal separation distances
+      const gapX = Math.min(
+        Math.abs(rect1.right - rect2.left),
+        Math.abs(rect2.right - rect1.left)
+      );
+      const gapY = Math.min(
+        Math.abs(rect1.bottom - rect2.top),
+        Math.abs(rect2.bottom - rect1.top)
       );
       
-      if (distance < buffer) {
+      const minGap = Math.min(gapX, gapY);
+      
+      if (overlapX > 0 && overlapY > 0 || minGap < buffer) {
         hasRepulsion = true;
-        const repulsion = calculateRepulsionForce(
-          { ...movingArtboard, x: newX, y: newY }, 
-          artboard, 
-          buffer
-        );
         
-        finalX += repulsion.x;
-        finalY += repulsion.y;
+        // Calculate repulsion direction and force
+        const centerX1 = newX + movingArtboard.width / 2;
+        const centerY1 = newY + movingArtboard.height / 2;
+        const centerX2 = artboard.x + artboard.width / 2;
+        const centerY2 = artboard.y + artboard.height / 2;
         
-        // IMPLEMENTED: Visual feedback for repulsion
+        const deltaX = centerX1 - centerX2;
+        const deltaY = centerY1 - centerY2;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        if (distance > 0) {
+          const normalizedX = deltaX / distance;
+          const normalizedY = deltaY / distance;
+          
+          // Stronger repulsion force
+          const repulsionForce = Math.max(20, buffer - minGap);
+          
+          finalX += normalizedX * repulsionForce;
+          finalY += normalizedY * repulsionForce;
+        }
+        
+        // Enhanced visual feedback for repulsion
         const artboardElement = fabricCanvas?.getObjects().find(obj => 
           (obj as any).artboardId === artboard.id && obj.type === 'rect'
         ) as Rect;
         
         if (artboardElement) {
-          // Red highlight during repulsion
-          artboardElement.set({ stroke: '#ef4444', strokeWidth: 4 / (zoom / 100) });
+          // Animated red pulse during repulsion
+          artboardElement.set({ 
+            stroke: '#ef4444', 
+            strokeWidth: 6 / (zoom / 100),
+            shadow: {
+              color: '#ef4444',
+              blur: 10,
+              offsetX: 0,
+              offsetY: 0
+            }
+          });
           fabricCanvas?.renderAll();
           
           setTimeout(() => {
-            artboardElement.set({ stroke: '#3b82f6', strokeWidth: 2 / (zoom / 100) });
+            artboardElement.set({ 
+              stroke: '#3b82f6', 
+              strokeWidth: 2 / (zoom / 100),
+              shadow: null
+            });
             fabricCanvas?.renderAll();
-          }, 300);
+          }, 400);
         }
       }
     }
@@ -273,7 +351,7 @@ export const CanvasEditor = () => {
     return { x: maxRight + buffer, y: 100 };
   }, [artboards]);
 
-  // IMPLEMENTED: Enhanced artboard creation with REAL containment system
+  // ENHANCED: Enhanced artboard creation with improved containment
   const createArtboard = useCallback((artboardData: Omit<Artboard, 'id'>) => {
     if (!fabricCanvas) return;
 
@@ -287,14 +365,14 @@ export const CanvasEditor = () => {
       id: `artboard_${Date.now()}`,
       x: position.x,
       y: position.y,
-      width: Math.min(artboardData.width, 800),
-      height: Math.min(artboardData.height, 600),
-      backgroundColor: '#ffffff',
+      width: Math.min(artboardData.width, 2000),
+      height: Math.min(artboardData.height, 2000),
+      backgroundColor: artboardData.backgroundColor || '#ffffff',
       isActive: true,
       elementIds: []
     };
 
-    // Create artboard visual
+    // Create artboard visual with enhanced styling
     const artboardRect = new Rect({
       left: newArtboard.x,
       top: newArtboard.y,
@@ -303,18 +381,19 @@ export const CanvasEditor = () => {
       fill: newArtboard.backgroundColor || '#ffffff',
       stroke: '#3b82f6',
       strokeWidth: 2 / (zoom / 100),
-      strokeDashArray: [5, 5],
+      strokeDashArray: [8, 4],
       selectable: true,
       evented: true,
-      rx: 0,
-      ry: 0,
+      rx: 4,
+      ry: 4,
     });
 
     const artboardLabel = new FabricText(newArtboard.name, {
-      left: newArtboard.x + 10,
-      top: newArtboard.y - 30,
+      left: newArtboard.x + 12,
+      top: newArtboard.y - 35,
       fontSize: 14 / (zoom / 100),
       fontFamily: 'Inter, sans-serif',
+      fontWeight: 'bold',
       fill: '#3b82f6',
       selectable: false,
       evented: false,
@@ -326,34 +405,43 @@ export const CanvasEditor = () => {
     (artboardLabel as any).isArtboard = true;
     (artboardLabel as any).artboardId = newArtboard.id;
 
-    // IMPLEMENTED: Enhanced movement with repulsion and element containment
+    // ENHANCED: Movement with advanced repulsion and locked state handling
     artboardRect.on('moving', () => {
+      // Check if artboard is locked
+      if ((newArtboard as any).isLocked) {
+        artboardRect.set({ 
+          left: newArtboard.x, 
+          top: newArtboard.y 
+        });
+        return;
+      }
+      
       const currentX = artboardRect.left || 0;
       const currentY = artboardRect.top || 0;
       
-      // Apply repulsion
+      // Apply enhanced repulsion
       const newPos = checkArtboardCollisionWithRepulsion(newArtboard, currentX, currentY);
       
       if (newPos.hasRepulsion) {
-        // FIXED: Smooth animation for repulsion using correct Fabric.js v6 syntax
         artboardRect.set({ left: newPos.x, top: newPos.y });
       }
       
       // Update label position
       artboardLabel.set({
-        left: (artboardRect.left || 0) + 10,
-        top: (artboardRect.top || 0) - 30
+        left: (artboardRect.left || 0) + 12,
+        top: (artboardRect.top || 0) - 35
       });
       
-      // IMPLEMENTED: Move contained elements with artboard
+      // Move contained elements with artboard (improved performance)
       const deltaX = (artboardRect.left || 0) - newArtboard.x;
       const deltaY = (artboardRect.top || 0) - newArtboard.y;
       
-      if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+      if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
         const containedElements = fabricCanvas.getObjects().filter(obj => 
           (obj as any).artboardId === newArtboard.id && !(obj as any).isArtboard
         );
         
+        // Batch update for better performance
         containedElements.forEach(element => {
           element.set({
             left: (element.left || 0) + deltaX,
@@ -370,7 +458,11 @@ export const CanvasEditor = () => {
       fabricCanvas.renderAll();
     });
 
-    // Selection event for artboard management
+    // Save state after creation
+    artboardRect.on('modified', () => {
+      saveState(`Prancheta "${newArtboard.name}" movida`);
+    });
+
     artboardRect.on('selected', () => {
       setSelectedArtboard(newArtboard);
       console.log(`Artboard selected: ${newArtboard.name}`);
@@ -384,11 +476,13 @@ export const CanvasEditor = () => {
     setArtboards(prev => [...prev, newArtboard]);
     setSelectedArtboard(newArtboard);
     
-    createNewVersion(`Created artboard: ${newArtboard.name}`, fabricCanvas.toJSON(), zoom, [...artboards, newArtboard]);
+    // Initialize history and save creation state
+    initializeHistory();
+    saveState(`Prancheta "${newArtboard.name}" criada`);
     
     console.log(`Enhanced artboard created: ${newArtboard.name}`);
-    toast(`Artboard "${newArtboard.name}" created with containment system!`);
-  }, [fabricCanvas, zoom, artboards, createNewVersion, findNextArtboardPosition, checkArtboardCollisionWithRepulsion]);
+    toast(`Prancheta "${newArtboard.name}" criada com sistema de contenção!`);
+  }, [fabricCanvas, zoom, artboards, findNextArtboardPosition, checkArtboardCollisionWithRepulsion, saveState, initializeHistory]);
 
   // Artboard management functions
   const handleUpdateArtboard = useCallback((id: string, updates: Partial<Artboard>) => {
@@ -462,6 +556,14 @@ export const CanvasEditor = () => {
     setZoom(100);
     toast(`Zoomed to artboard: ${artboard.name}`);
   }, [artboards, fabricCanvas]);
+
+  // ENHANCED: Export artboard with new system
+  const handleExportArtboard = useCallback(async (id: string) => {
+    const artboard = getArtboardById(artboards, id);
+    if (artboard && fabricCanvas) {
+      await exportArtboard(fabricCanvas, artboard, 'png', 2);
+    }
+  }, [artboards, fabricCanvas, exportArtboard]);
 
   // IMPLEMENTED: Interactive element creation with preview
   const startInteractiveCreation = useCallback((elementType: string) => {
@@ -748,6 +850,22 @@ export const CanvasEditor = () => {
             handlePaste();
           }
           break;
+        case 'z':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            if (e.shiftKey) {
+              redo();
+            } else {
+              undo();
+            }
+          }
+          break;
+        case 'y':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            redo();
+          }
+          break;
         case 'Escape':
           if (isCreatingElement) {
             setIsCreatingElement(false);
@@ -763,7 +881,90 @@ export const CanvasEditor = () => {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleDelete, handleCopy, handlePaste, isCreatingElement, previewElement, fabricCanvas]);
+  }, [handleDelete, handleCopy, handlePaste, undo, redo, isCreatingElement, previewElement, fabricCanvas]);
+
+  // Auto-save state on object changes
+  useEffect(() => {
+    if (!fabricCanvas) return;
+
+    const handleObjectModified = (e: any) => {
+      const obj = e.target;
+      saveState(`${obj.type} modificado`);
+      updateLayers();
+    };
+
+    const handleObjectAdded = (e: any) => {
+      const obj = e.target;
+      if (!(obj as any).isArtboard && !(obj as any).isGridLine && !(obj as any).isPreview) {
+        saveState(`${obj.type} adicionado`);
+        updateLayers();
+      }
+    };
+
+    const handleObjectRemoved = (e: any) => {
+      const obj = e.target;
+      if (!(obj as any).isArtboard && !(obj as any).isGridLine) {
+        saveState(`${obj.type} removido`);
+        updateLayers();
+      }
+    };
+
+    fabricCanvas.on('object:modified', handleObjectModified);
+    fabricCanvas.on('object:added', handleObjectAdded);
+    fabricCanvas.on('object:removed', handleObjectRemoved);
+
+    return () => {
+      fabricCanvas.off('object:modified', handleObjectModified);
+      fabricCanvas.off('object:added', handleObjectAdded);
+      fabricCanvas.off('object:removed', handleObjectRemoved);
+    };
+  }, [fabricCanvas, saveState, updateLayers]);
+
+  // ENHANCED: Enhanced object movement with artboard containment
+  useEffect(() => {
+    if (!fabricCanvas) return;
+
+    const handleObjectMoving = (e: any) => {
+      const obj = e.target;
+      if ((obj as any).isArtboard) return;
+
+      // Check if object should be contained in artboard
+      const containingArtboard = artboards.find(artboard => 
+        checkElementInArtboard(obj, artboard)
+      );
+
+      if (containingArtboard) {
+        // Assign element to artboard if not already assigned
+        if ((obj as any).artboardId !== containingArtboard.id) {
+          (obj as any).artboardId = containingArtboard.id;
+          console.log(`Element auto-assigned to artboard: ${containingArtboard.name}`);
+        }
+        
+        // Constrain element to artboard boundaries
+        constrainElementToArtboard(obj, containingArtboard);
+        fabricCanvas.renderAll();
+      }
+    };
+
+    fabricCanvas.on('object:moving', handleObjectMoving);
+
+    return () => {
+      fabricCanvas.off('object:moving', handleObjectMoving);
+    };
+  }, [fabricCanvas, artboards]);
+
+  const handleSelectObject = (obj: FabricObject) => {
+    if (!fabricCanvas) return;
+    fabricCanvas.setActiveObject(obj);
+    fabricCanvas.renderAll();
+  };
+
+  const handleDeleteObject = (obj: FabricObject) => {
+    if (!fabricCanvas) return;
+    fabricCanvas.remove(obj);
+    fabricCanvas.renderAll();
+    setSelectedObject(null);
+  };
 
   // Enhanced tool handlers with interactive creation
   const handleToolClick = useCallback((tool: typeof activeTool) => {
@@ -822,52 +1023,6 @@ export const CanvasEditor = () => {
     }
   }, [fabricCanvas, zoom, artboards, createNewVersion, startInteractiveCreation]);
 
-  // IMPLEMENTED: Enhanced object movement with artboard containment
-  useEffect(() => {
-    if (!fabricCanvas) return;
-
-    const handleObjectMoving = (e: any) => {
-      const obj = e.target;
-      if ((obj as any).isArtboard) return;
-
-      // Check if object should be contained in artboard
-      const containingArtboard = artboards.find(artboard => 
-        checkElementInArtboard(obj, artboard)
-      );
-
-      if (containingArtboard) {
-        // Assign element to artboard if not already assigned
-        if ((obj as any).artboardId !== containingArtboard.id) {
-          (obj as any).artboardId = containingArtboard.id;
-          console.log(`Element auto-assigned to artboard: ${containingArtboard.name}`);
-        }
-        
-        // Constrain element to artboard boundaries
-        constrainElementToArtboard(obj, containingArtboard);
-        fabricCanvas.renderAll();
-      }
-    };
-
-    fabricCanvas.on('object:moving', handleObjectMoving);
-
-    return () => {
-      fabricCanvas.off('object:moving', handleObjectMoving);
-    };
-  }, [fabricCanvas, artboards]);
-
-  const handleSelectObject = (obj: FabricObject) => {
-    if (!fabricCanvas) return;
-    fabricCanvas.setActiveObject(obj);
-    fabricCanvas.renderAll();
-  };
-
-  const handleDeleteObject = (obj: FabricObject) => {
-    if (!fabricCanvas) return;
-    fabricCanvas.remove(obj);
-    fabricCanvas.renderAll();
-    setSelectedObject(null);
-  };
-
   return (
     <div className="h-screen w-screen bg-gray-50 relative overflow-hidden">
       {/* Canvas */}
@@ -900,6 +1055,7 @@ export const CanvasEditor = () => {
             if (selectedObject && fabricCanvas) {
               selectedObject.set(props);
               fabricCanvas.renderAll();
+              saveState('Propriedades atualizadas');
             }
           }}
         />
@@ -908,6 +1064,7 @@ export const CanvasEditor = () => {
           artboards={artboards}
           selectedArtboard={selectedArtboard}
           canvasObjects={canvasObjects}
+          fabricCanvas={fabricCanvas}
           onUpdateArtboard={handleUpdateArtboard}
           onDeleteArtboard={handleDeleteArtboard}
           onDuplicateArtboard={(id) => {
@@ -922,26 +1079,52 @@ export const CanvasEditor = () => {
             }
           }}
           onZoomToArtboard={handleZoomToArtboard}
-          onExportArtboard={(id) => {
-            const artboard = getArtboardById(artboards, id);
-            if (artboard) {
-              toast(`Export functionality for "${artboard.name}" coming soon!`);
-            }
-          }}
+          onExportArtboard={handleExportArtboard}
+          onCreateArtboard={createArtboard}
         />
       )}
 
-      {/* Layers Panel */}
+      {/* Enhanced Layers Panel */}
       <MinimalLayersPanel
         objects={canvasObjects}
         selectedObject={selectedObject}
+        layers={layers}
         onSelectObject={handleSelectObject}
         onDeleteObject={handleDeleteObject}
+        onToggleVisibility={toggleLayerVisibility}
+        onToggleLock={toggleLayerLock}
+        onDuplicate={duplicateLayer}
+        onMoveUp={moveLayerUp}
+        onMoveDown={moveLayerDown}
       />
+
+      {/* Undo/Redo Controls */}
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-40 flex gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={undo}
+          disabled={!canUndo}
+          className="h-8 px-3"
+        >
+          <Undo className="w-4 h-4 mr-1" />
+          Desfazer
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={redo}
+          disabled={!canRedo}
+          className="h-8 px-3"
+        >
+          <Redo className="w-4 h-4 mr-1" />
+          Refazer
+        </Button>
+      </div>
 
       {/* Instructions overlay for interactive creation */}
       {isCreatingElement && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-black/80 text-white px-4 py-2 rounded-lg">
+        <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50 bg-black/80 text-white px-4 py-2 rounded-lg">
           Clique e arraste para criar o elemento. Pressione ESC para cancelar.
         </div>
       )}
