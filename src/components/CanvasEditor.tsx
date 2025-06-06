@@ -1,5 +1,6 @@
+
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, Point, Group } from "fabric";
+import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, Point, Group, FabricImage } from "fabric";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -19,6 +20,7 @@ export const CanvasEditor = () => {
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showLayers, setShowLayers] = useState(false);
+  const [clipboard, setClipboard] = useState<FabricObject | null>(null);
   const gridSize = 20;
 
   // Draw grid on canvas
@@ -84,7 +86,7 @@ export const CanvasEditor = () => {
     if (newHistory.length > 50) {
       newHistory.shift();
     } else {
-      setHistoryIndex(historyIndex + 1);
+      setHistoryIndex(prev => prev + 1);
     }
     
     setHistory(newHistory);
@@ -97,7 +99,7 @@ export const CanvasEditor = () => {
     fabricCanvas.loadFromJSON(prevState, () => {
       fabricCanvas.renderAll();
       drawGrid(fabricCanvas);
-      setHistoryIndex(historyIndex - 1);
+      setHistoryIndex(prev => prev - 1);
       updateObjectsList();
       toast("Undone!");
     });
@@ -110,7 +112,7 @@ export const CanvasEditor = () => {
     fabricCanvas.loadFromJSON(nextState, () => {
       fabricCanvas.renderAll();
       drawGrid(fabricCanvas);
-      setHistoryIndex(historyIndex + 1);
+      setHistoryIndex(prev => prev + 1);
       updateObjectsList();
       toast("Redone!");
     });
@@ -122,6 +124,57 @@ export const CanvasEditor = () => {
     const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine);
     setCanvasObjects(objects);
   }, [fabricCanvas]);
+
+  // Handler functions
+  const handleDelete = useCallback(() => {
+    if (!fabricCanvas) return;
+    const activeObjects = fabricCanvas.getActiveObjects();
+    if (activeObjects.length === 0) return;
+
+    activeObjects.forEach(obj => fabricCanvas.remove(obj));
+    fabricCanvas.discardActiveObject();
+    fabricCanvas.renderAll();
+    setSelectedObject(null);
+    toast("Objects deleted!");
+  }, [fabricCanvas]);
+
+  const handleCopy = useCallback(() => {
+    if (!fabricCanvas) return;
+    const activeObject = fabricCanvas.getActiveObject();
+    if (!activeObject) return;
+
+    activeObject.clone((cloned: FabricObject) => {
+      setClipboard(cloned);
+      toast("Object copied!");
+    });
+  }, [fabricCanvas]);
+
+  const handlePaste = useCallback(() => {
+    if (!fabricCanvas || !clipboard) return;
+
+    clipboard.clone((cloned: FabricObject) => {
+      cloned.set({
+        left: (cloned.left || 0) + 10,
+        top: (cloned.top || 0) + 10,
+        evented: true,
+      });
+      
+      if (cloned.type === 'activeSelection') {
+        // Handle group pasting
+        (cloned as any).canvas = fabricCanvas;
+        (cloned as any).forEachObject((obj: FabricObject) => {
+          fabricCanvas.add(obj);
+        });
+        cloned.setCoords();
+      } else {
+        fabricCanvas.add(cloned);
+      }
+      
+      fabricCanvas.setActiveObject(cloned);
+      fabricCanvas.renderAll();
+      toast("Object pasted!");
+    });
+  }, [fabricCanvas, clipboard]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -206,16 +259,16 @@ export const CanvasEditor = () => {
     // Save state on object modifications
     canvas.on('object:added', () => {
       updateObjectsList();
-      saveState();
+      setTimeout(() => saveState(), 100);
     });
 
     canvas.on('object:removed', () => {
       updateObjectsList();
-      saveState();
+      setTimeout(() => saveState(), 100);
     });
 
     canvas.on('object:modified', () => {
-      saveState();
+      setTimeout(() => saveState(), 100);
     });
 
     setFabricCanvas(canvas);
@@ -235,26 +288,28 @@ export const CanvasEditor = () => {
           break;
         case 'c':
           if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
             handleCopy();
           }
           break;
         case 'v':
           if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
             handlePaste();
           }
           break;
         case 'z':
           if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
             if (e.shiftKey) {
-              // Redo (Ctrl+Shift+Z)
-              toast("Redo functionality coming soon!");
+              redo();
             } else {
-              // Undo (Ctrl+Z)
-              toast("Undo functionality coming soon!");
+              undo();
             }
           }
           break;
         case 'g':
+          e.preventDefault();
           setShowGrid(!showGrid);
           break;
         case 's':
@@ -272,7 +327,7 @@ export const CanvasEditor = () => {
       document.removeEventListener('keydown', handleKeyDown);
       canvas.dispose();
     };
-  }, [drawGrid, snapToGridFn, showGrid, saveState, updateObjectsList]);
+  }, [drawGrid, snapToGridFn, showGrid, saveState, updateObjectsList, handleDelete, handleCopy, handlePaste, undo, redo]);
 
   // Redraw grid when showGrid changes
   useEffect(() => {
@@ -353,15 +408,17 @@ export const CanvasEditor = () => {
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const fabricImage = new FabricObject(img, {
-          left: 100,
-          top: 100,
-          scaleX: 200 / img.width,
-          scaleY: 200 / img.height,
+        FabricImage.fromURL(e.target?.result as string, (fabricImage) => {
+          fabricImage.set({
+            left: 100,
+            top: 100,
+            scaleX: 200 / (fabricImage.width || 1),
+            scaleY: 200 / (fabricImage.height || 1),
+          });
+          fabricCanvas.add(fabricImage);
+          fabricCanvas.setActiveObject(fabricImage);
+          fabricCanvas.renderAll();
         });
-        fabricCanvas.add(fabricImage);
-        fabricCanvas.setActiveObject(fabricImage);
-        fabricCanvas.renderAll();
       };
       img.src = e.target?.result as string;
     };
@@ -404,6 +461,54 @@ export const CanvasEditor = () => {
 
     fabricCanvas.renderAll();
     toast(`Aligned ${activeObjects.length} object(s) to ${alignment}`);
+  };
+
+  // Distribute functions
+  const handleDistribute = (direction: 'horizontal' | 'vertical') => {
+    if (!fabricCanvas) return;
+    
+    const activeObjects = fabricCanvas.getActiveObjects();
+    if (activeObjects.length < 3) {
+      toast("Select at least 3 objects to distribute");
+      return;
+    }
+
+    if (direction === 'horizontal') {
+      // Sort objects by left position
+      const sortedObjects = [...activeObjects].sort((a, b) => (a.left || 0) - (b.left || 0));
+      const leftmost = sortedObjects[0].left || 0;
+      const rightmost = (sortedObjects[sortedObjects.length - 1].left || 0) + 
+                       (sortedObjects[sortedObjects.length - 1].width || 0) * (sortedObjects[sortedObjects.length - 1].scaleX || 1);
+      
+      const totalWidth = rightmost - leftmost;
+      const spacing = totalWidth / (sortedObjects.length - 1);
+      
+      sortedObjects.forEach((obj, index) => {
+        if (index > 0 && index < sortedObjects.length - 1) {
+          obj.set({ left: leftmost + spacing * index });
+          obj.setCoords();
+        }
+      });
+    } else {
+      // Sort objects by top position
+      const sortedObjects = [...activeObjects].sort((a, b) => (a.top || 0) - (b.top || 0));
+      const topmost = sortedObjects[0].top || 0;
+      const bottommost = (sortedObjects[sortedObjects.length - 1].top || 0) + 
+                        (sortedObjects[sortedObjects.length - 1].height || 0) * (sortedObjects[sortedObjects.length - 1].scaleY || 1);
+      
+      const totalHeight = bottommost - topmost;
+      const spacing = totalHeight / (sortedObjects.length - 1);
+      
+      sortedObjects.forEach((obj, index) => {
+        if (index > 0 && index < sortedObjects.length - 1) {
+          obj.set({ top: topmost + spacing * index });
+          obj.setCoords();
+        }
+      });
+    }
+
+    fabricCanvas.renderAll();
+    toast(`Distributed ${activeObjects.length} objects ${direction}ly`);
   };
 
   // Group functions
@@ -480,8 +585,6 @@ export const CanvasEditor = () => {
     fabricCanvas?.renderAll();
   };
 
-  // ... keep existing code (other handler functions)
-
   return (
     <div className="h-screen bg-[hsl(var(--editor-bg))] flex flex-col overflow-hidden">
       {/* Hidden file input for image uploads */}
@@ -513,7 +616,7 @@ export const CanvasEditor = () => {
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
         onAlign={handleAlign}
-        onDistribute={() => {}} // TODO: implement distribute
+        onDistribute={handleDistribute}
         hasSelection={!!selectedObject}
       />
 
