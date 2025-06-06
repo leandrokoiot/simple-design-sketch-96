@@ -139,7 +139,8 @@ export const useLayerSystem = (canvas: FabricCanvas | null) => {
     const layer = layers.find(l => l.id === layerId);
     if (!layer || !canvas) return;
 
-    layer.object.bringForward();
+    // Use correct Fabric.js v6 method
+    canvas.bringObjectForward(layer.object);
     canvas.renderAll();
     updateLayers();
   }, [layers, canvas, updateLayers]);
@@ -148,16 +149,19 @@ export const useLayerSystem = (canvas: FabricCanvas | null) => {
     const layer = layers.find(l => l.id === layerId);
     if (!layer || !canvas) return;
 
-    layer.object.sendBackwards();
+    // Use correct Fabric.js v6 method
+    canvas.sendObjectBackwards(layer.object);
     canvas.renderAll();
     updateLayers();
   }, [layers, canvas, updateLayers]);
 
-  const duplicateLayer = useCallback((layerId: string) => {
+  const duplicateLayer = useCallback(async (layerId: string) => {
     const layer = layers.find(l => l.id === layerId);
     if (!layer || !canvas) return;
 
-    layer.object.clone((cloned: FabricObject) => {
+    try {
+      // Use correct Fabric.js v6 clone method
+      const cloned = await layer.object.clone();
       cloned.set({
         left: (cloned.left || 0) + 10,
         top: (cloned.top || 0) + 10,
@@ -170,7 +174,9 @@ export const useLayerSystem = (canvas: FabricCanvas | null) => {
       canvas.add(cloned);
       canvas.setActiveObject(cloned);
       canvas.renderAll();
-    });
+    } catch (error) {
+      console.error('Failed to duplicate layer:', error);
+    }
   }, [layers, canvas, generateLayerId]);
 
   const deleteLayer = useCallback((layerId: string) => {

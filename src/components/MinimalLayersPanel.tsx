@@ -17,12 +17,12 @@ import {
   ChevronDown,
   Trash2
 } from "lucide-react";
-import { LayerInfo } from "@/hooks/useLayerSystem";
+import { Layer } from "@/hooks/useLayerSystem";
 
 interface MinimalLayersPanelProps {
   objects: FabricObject[];
   selectedObject: FabricObject | null;
-  layers: LayerInfo[];
+  layers: Layer[];
   onSelectObject: (object: FabricObject) => void;
   onDeleteObject: (object: FabricObject) => void;
   onToggleVisibility: (id: string) => void;
