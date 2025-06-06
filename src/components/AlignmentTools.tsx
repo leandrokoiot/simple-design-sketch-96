@@ -4,11 +4,11 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
-  AlignTop,
-  AlignMiddle,
-  AlignBottom,
-  DistributeHorizontal,
-  DistributeVertical
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignEndVertical,
+  AlignHorizontalDistributeCenter,
+  AlignVerticalDistributeCenter
 } from "lucide-react";
 
 interface AlignmentToolsProps {
@@ -22,9 +22,9 @@ export const AlignmentTools = ({ onAlign, onDistribute, disabled = false }: Alig
     { icon: AlignLeft, action: 'left', title: 'Align Left' },
     { icon: AlignCenter, action: 'center', title: 'Align Center' },
     { icon: AlignRight, action: 'right', title: 'Align Right' },
-    { icon: AlignTop, action: 'top', title: 'Align Top' },
-    { icon: AlignMiddle, action: 'middle', title: 'Align Middle' },
-    { icon: AlignBottom, action: 'bottom', title: 'Align Bottom' },
+    { icon: AlignStartVertical, action: 'top', title: 'Align Top' },
+    { icon: AlignCenterVertical, action: 'middle', title: 'Align Middle' },
+    { icon: AlignEndVertical, action: 'bottom', title: 'Align Bottom' },
   ];
 
   return (
@@ -53,7 +53,7 @@ export const AlignmentTools = ({ onAlign, onDistribute, disabled = false }: Alig
         disabled={disabled}
         title="Distribute Horizontally"
       >
-        <DistributeHorizontal className="w-4 h-4" />
+        <AlignHorizontalDistributeCenter className="w-4 h-4" />
       </Button>
       
       <Button
@@ -64,7 +64,7 @@ export const AlignmentTools = ({ onAlign, onDistribute, disabled = false }: Alig
         disabled={disabled}
         title="Distribute Vertically"
       >
-        <DistributeVertical className="w-4 h-4" />
+        <AlignVerticalDistributeCenter className="w-4 h-4" />
       </Button>
     </div>
   );
