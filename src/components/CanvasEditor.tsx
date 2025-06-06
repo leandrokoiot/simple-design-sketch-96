@@ -12,13 +12,19 @@ export const CanvasEditor = () => {
   const [activeTool, setActiveTool] = useState<"select" | "rectangle" | "circle" | "text" | "line" | "hand" | "draw" | "image">("select");
   const [selectedObject, setSelectedObject] = useState<FabricObject | null>(null);
   const [canvasObjects, setCanvasObjects] = useState<FabricObject[]>([]);
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
   const [clipboard, setClipboard] = useState<FabricObject | null>(null);
   const [showGrid, setShowGrid] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
 
   const gridSize = 20;
+
+  // Update objects list with debounce
+  const updateObjectsList = useCallback(() => {
+    if (!fabricCanvas) return;
+    const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine);
+    setCanvasObjects(objects);
+    console.log(`Objects updated: ${objects.length} objects`);
+  }, [fabricCanvas]);
 
   // Draw grid on canvas
   const drawGrid = useCallback((canvas: FabricCanvas) => {
@@ -71,30 +77,6 @@ export const CanvasEditor = () => {
     });
   }, [snapToGrid, gridSize]);
 
-  // Update objects list
-  const updateObjectsList = useCallback(() => {
-    if (!fabricCanvas) return;
-    const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine);
-    setCanvasObjects(objects);
-  }, [fabricCanvas]);
-
-  // History management
-  const saveState = useCallback(() => {
-    if (!fabricCanvas) return;
-    
-    const currentState = JSON.stringify(fabricCanvas.toJSON());
-    const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(currentState);
-    
-    if (newHistory.length > 50) {
-      newHistory.shift();
-    } else {
-      setHistoryIndex(prev => prev + 1);
-    }
-    
-    setHistory(newHistory);
-  }, [fabricCanvas, history, historyIndex]);
-
   const handleDelete = useCallback(() => {
     if (!fabricCanvas) return;
     const activeObjects = fabricCanvas.getActiveObjects();
@@ -132,9 +114,11 @@ export const CanvasEditor = () => {
     });
   }, [fabricCanvas, clipboard]);
 
+  // Initialize canvas only once
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || fabricCanvas) return;
 
+    console.log("Initializing canvas...");
     const canvas = new FabricCanvas(canvasRef.current, {
       width: window.innerWidth,
       height: window.innerHeight,
@@ -144,37 +128,52 @@ export const CanvasEditor = () => {
     canvas.selection = true;
     canvas.preserveObjectStacking = true;
 
-    // Object selection
-    canvas.on('selection:created', (e) => {
+    // Object selection events
+    const handleSelectionCreated = (e: any) => {
       setSelectedObject(e.selected?.[0] || null);
-    });
+      console.log("Object selected:", e.selected?.[0]?.type);
+    };
 
-    canvas.on('selection:updated', (e) => {
+    const handleSelectionUpdated = (e: any) => {
       setSelectedObject(e.selected?.[0] || null);
-    });
+    };
 
-    canvas.on('selection:cleared', () => {
+    const handleSelectionCleared = () => {
       setSelectedObject(null);
-    });
+    };
 
-    canvas.on('object:added', () => {
+    const handleObjectAdded = () => {
+      console.log("Object added to canvas");
       updateObjectsList();
-      setTimeout(() => saveState(), 100);
-    });
+    };
 
-    canvas.on('object:removed', () => {
+    const handleObjectRemoved = () => {
+      console.log("Object removed from canvas");
       updateObjectsList();
-      setTimeout(() => saveState(), 100);
-    });
+    };
 
-    canvas.on('object:modified', () => {
-      setTimeout(() => saveState(), 100);
-    });
+    canvas.on('selection:created', handleSelectionCreated);
+    canvas.on('selection:updated', handleSelectionUpdated);
+    canvas.on('selection:cleared', handleSelectionCleared);
+    canvas.on('object:added', handleObjectAdded);
+    canvas.on('object:removed', handleObjectRemoved);
 
     setFabricCanvas(canvas);
-    setTimeout(() => saveState(), 100);
+    console.log("Canvas initialized successfully");
 
-    // Keyboard shortcuts
+    return () => {
+      console.log("Disposing canvas...");
+      canvas.off('selection:created', handleSelectionCreated);
+      canvas.off('selection:updated', handleSelectionUpdated);
+      canvas.off('selection:cleared', handleSelectionCleared);
+      canvas.off('object:added', handleObjectAdded);
+      canvas.off('object:removed', handleObjectRemoved);
+      canvas.dispose();
+    };
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       
@@ -199,70 +198,77 @@ export const CanvasEditor = () => {
     };
 
     document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      canvas.dispose();
-    };
-  }, [updateObjectsList, saveState, handleDelete, handleCopy, handlePaste]);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleDelete, handleCopy, handlePaste]);
 
   // Tool handlers
-  const handleToolClick = (tool: typeof activeTool) => {
+  const handleToolClick = useCallback((tool: typeof activeTool) => {
+    console.log(`Tool clicked: ${tool}`);
     setActiveTool(tool);
 
-    if (!fabricCanvas) return;
+    if (!fabricCanvas) {
+      console.error("Canvas not available");
+      return;
+    }
 
     fabricCanvas.isDrawingMode = false;
 
+    const canvasCenter = {
+      x: fabricCanvas.width! / 2,
+      y: fabricCanvas.height! / 2
+    };
+
+    let newObject: FabricObject | null = null;
+
     if (tool === "rectangle") {
-      const rect = new Rect({
-        left: fabricCanvas.width! / 2 - 75,
-        top: fabricCanvas.height! / 2 - 50,
+      console.log("Creating rectangle...");
+      newObject = new Rect({
+        left: canvasCenter.x - 75,
+        top: canvasCenter.y - 50,
         width: 150,
         height: 100,
         fill: "#000000",
         rx: 0,
         ry: 0,
       });
-      fabricCanvas.add(rect);
-      fabricCanvas.setActiveObject(rect);
-      fabricCanvas.renderAll();
     } else if (tool === "circle") {
-      const circle = new Circle({
-        left: fabricCanvas.width! / 2 - 50,
-        top: fabricCanvas.height! / 2 - 50,
+      console.log("Creating circle...");
+      newObject = new Circle({
+        left: canvasCenter.x - 50,
+        top: canvasCenter.y - 50,
         radius: 50,
         fill: "#000000",
       });
-      fabricCanvas.add(circle);
-      fabricCanvas.setActiveObject(circle);
-      fabricCanvas.renderAll();
     } else if (tool === "text") {
-      const text = new FabricText("Text", {
-        left: fabricCanvas.width! / 2 - 25,
-        top: fabricCanvas.height! / 2 - 12,
+      console.log("Creating text...");
+      newObject = new FabricText("Text", {
+        left: canvasCenter.x - 25,
+        top: canvasCenter.y - 12,
         fontFamily: "Inter, sans-serif",
         fontSize: 24,
         fill: "#000000",
       });
-      fabricCanvas.add(text);
-      fabricCanvas.setActiveObject(text);
-      fabricCanvas.renderAll();
     } else if (tool === "line") {
-      const line = new Line([
-        fabricCanvas.width! / 2 - 75, 
-        fabricCanvas.height! / 2, 
-        fabricCanvas.width! / 2 + 75, 
-        fabricCanvas.height! / 2
+      console.log("Creating line...");
+      newObject = new Line([
+        canvasCenter.x - 75, 
+        canvasCenter.y, 
+        canvasCenter.x + 75, 
+        canvasCenter.y
       ], {
         stroke: "#000000",
         strokeWidth: 2,
       });
-      fabricCanvas.add(line);
-      fabricCanvas.setActiveObject(line);
-      fabricCanvas.renderAll();
     }
-  };
+
+    if (newObject) {
+      fabricCanvas.add(newObject);
+      fabricCanvas.setActiveObject(newObject);
+      fabricCanvas.renderAll();
+      console.log(`${tool} added successfully`);
+      toast(`${tool} added to canvas`);
+    }
+  }, [fabricCanvas]);
 
   const handleSelectObject = (obj: FabricObject) => {
     if (!fabricCanvas) return;
