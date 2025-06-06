@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import { Canvas as FabricCanvas, FabricObject } from 'fabric';
+import { Canvas, FabricObject } from 'fabric';
 import { toast } from 'sonner';
 
 export interface LayerInfo {
@@ -14,7 +14,7 @@ export interface LayerInfo {
   zIndex: number;
 }
 
-export const useLayerSystem = (canvas: FabricCanvas | null) => {
+export const useLayerSystem = (canvas: Canvas | null) => {
   const [layers, setLayers] = useState<LayerInfo[]>([]);
 
   const updateLayers = useCallback(() => {
@@ -97,7 +97,7 @@ export const useLayerSystem = (canvas: FabricCanvas | null) => {
     const obj = getObjectById(id);
     if (!obj || !canvas) return;
     
-    canvas.bringForward(obj);
+    canvas.bringObjectForward(obj);
     canvas.renderAll();
     updateLayers();
     toast("Camada movida para frente");
@@ -107,7 +107,7 @@ export const useLayerSystem = (canvas: FabricCanvas | null) => {
     const obj = getObjectById(id);
     if (!obj || !canvas) return;
     
-    canvas.sendBackwards(obj);
+    canvas.sendObjectBackwards(obj);
     canvas.renderAll();
     updateLayers();
     toast("Camada movida para trás");
@@ -117,7 +117,7 @@ export const useLayerSystem = (canvas: FabricCanvas | null) => {
     const obj = getObjectById(id);
     if (!obj || !canvas) return;
     
-    canvas.bringToFront(obj);
+    canvas.bringObjectToFront(obj);
     canvas.renderAll();
     updateLayers();
     toast("Camada movida para o topo");
@@ -127,7 +127,7 @@ export const useLayerSystem = (canvas: FabricCanvas | null) => {
     const obj = getObjectById(id);
     if (!obj || !canvas) return;
     
-    canvas.sendToBack(obj);
+    canvas.sendObjectToBack(obj);
     canvas.renderAll();
     updateLayers();
     toast("Camada movida para o fundo");
