@@ -83,7 +83,7 @@ export const CanvasEditor = () => {
     console.log(`Objects updated: ${objects.length} objects`);
   }, [fabricCanvas]);
 
-  // Draw grid on canvas - FIXED Line constructor
+  // Draw grid on canvas - FIXED Line constructor for Fabric.js v6
   const drawGrid = useCallback((canvas: FabricCanvas) => {
     if (!showGrid) return;
 
@@ -94,10 +94,9 @@ export const CanvasEditor = () => {
     const existingGrid = canvas.getObjects().filter(obj => (obj as any).isGridLine);
     existingGrid.forEach(line => canvas.remove(line));
 
-    // Draw vertical lines - FIXED: Use proper Line constructor
+    // Draw vertical lines - FIXED: Use array coordinates for Fabric.js v6
     for (let i = 0; i <= canvasWidth; i += gridSize) {
-      const line = new Line({
-        x1: i, y1: 0, x2: i, y2: canvasHeight,
+      const line = new Line([i, 0, i, canvasHeight], {
         stroke: '#e5e7eb',
         strokeWidth: 1,
         selectable: false,
@@ -108,10 +107,9 @@ export const CanvasEditor = () => {
       canvas.sendObjectToBack(line);
     }
 
-    // Draw horizontal lines - FIXED: Use proper Line constructor
+    // Draw horizontal lines - FIXED: Use array coordinates for Fabric.js v6
     for (let i = 0; i <= canvasHeight; i += gridSize) {
-      const line = new Line({
-        x1: 0, y1: i, x2: canvasWidth, y2: i,
+      const line = new Line([0, i, canvasWidth, i], {
         stroke: '#e5e7eb',
         strokeWidth: 1,
         selectable: false,
@@ -781,12 +779,8 @@ export const CanvasEditor = () => {
       });
     } else if (tool === "line") {
       console.log("Creating line...");
-      // FIXED: Use proper Line constructor for Fabric.js v6
-      newObject = new Line({
-        x1: canvasCenter.x - 75,
-        y1: canvasCenter.y,
-        x2: canvasCenter.x + 75,
-        y2: canvasCenter.y,
+      // FIXED: Use array coordinates for Fabric.js v6
+      newObject = new Line([canvasCenter.x - 75, canvasCenter.y, canvasCenter.x + 75, canvasCenter.y], {
         stroke: "#000000",
         strokeWidth: 2,
       });
