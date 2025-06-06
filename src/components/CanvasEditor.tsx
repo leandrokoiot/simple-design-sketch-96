@@ -3,10 +3,18 @@ import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, P
 import { MinimalSidebar } from "./MinimalSidebar";
 import { MinimalLayersPanel } from "./MinimalLayersPanel";
 import { MinimalPropertiesPanel } from "./MinimalPropertiesPanel";
+import { ArtboardManager } from "./ArtboardManager";
 import { ZoomControls } from "./ZoomControls";
 import { DebugPanel } from "./DebugPanel";
 import { useVersionControl } from "@/hooks/useVersionControl";
 import { Artboard } from "@/utils/projectState";
+import { 
+  checkElementInArtboard, 
+  findElementsInArtboard, 
+  constrainElementToArtboard,
+  calculateRepulsionForce,
+  getArtboardById
+} from "@/utils/artboardUtils";
 import { toast } from "sonner";
 
 export const CanvasEditor = () => {
@@ -21,6 +29,7 @@ export const CanvasEditor = () => {
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [artboards, setArtboards] = useState<Artboard[]>([]);
+  const [selectedArtboard, setSelectedArtboard] = useState<Artboard | null>(null);
   const [isCreatingElement, setIsCreatingElement] = useState(false);
   const [previewElement, setPreviewElement] = useState<FabricObject | null>(null);
 
@@ -180,9 +189,12 @@ export const CanvasEditor = () => {
     handleZoomChange(Math.max(10, Math.min(500, newZoom)));
   }, [fabricCanvas, handleZoomChange]);
 
-  // Check for artboard collision/proximity
-  const checkArtboardCollision = useCallback((movingArtboard: Artboard, newX: number, newY: number) => {
-    const buffer = 50; // Minimum distance between artboards
+  // Enhanced artboard collision with smooth repulsion animation
+  const checkArtboardCollisionWithRepulsion = useCallback((movingArtboard: Artboard, newX: number, newY: number) => {
+    const buffer = 80;
+    let finalX = newX;
+    let finalY = newY;
+    let hasRepulsion = false;
     
     for (const artboard of artboards) {
       if (artboard.id === movingArtboard.id) continue;
@@ -192,17 +204,33 @@ export const CanvasEditor = () => {
       );
       
       if (distance < buffer) {
-        // Calculate repulsion direction
-        const angle = Math.atan2(newY - artboard.y, newX - artboard.x);
-        return {
-          x: artboard.x + Math.cos(angle) * buffer,
-          y: artboard.y + Math.sin(angle) * buffer
-        };
+        hasRepulsion = true;
+        const repulsion = calculateRepulsionForce(
+          { ...movingArtboard, x: newX, y: newY }, 
+          artboard, 
+          buffer
+        );
+        
+        finalX += repulsion.x;
+        finalY += repulsion.y;
+        
+        // Add visual feedback for repulsion
+        const artboardElement = fabricCanvas?.getObjects().find(obj => 
+          (obj as any).artboardId === artboard.id && obj.type === 'rect'
+        ) as Rect;
+        
+        if (artboardElement) {
+          artboardElement.set({ stroke: '#ef4444', strokeWidth: 3 });
+          setTimeout(() => {
+            artboardElement.set({ stroke: '#3b82f6', strokeWidth: 2 / (zoom / 100) });
+            fabricCanvas?.renderAll();
+          }, 200);
+        }
       }
     }
     
-    return { x: newX, y: newY };
-  }, [artboards]);
+    return { x: finalX, y: finalY, hasRepulsion };
+  }, [artboards, fabricCanvas, zoom]);
 
   // Find next available position for artboard to avoid overlap
   const findNextArtboardPosition = useCallback(() => {
@@ -246,7 +274,6 @@ export const CanvasEditor = () => {
     // Deactivate other artboards
     setArtboards(prev => prev.map(ab => ({ ...ab, isActive: false })));
 
-    // Find position to avoid overlap
     const position = findNextArtboardPosition();
 
     const newArtboard: Artboard = {
@@ -255,26 +282,26 @@ export const CanvasEditor = () => {
       x: position.x,
       y: position.y,
       width: Math.min(artboardData.width, 800),
-      height: Math.min(artboardData.height, 600)
+      height: Math.min(artboardData.height, 600),
+      backgroundColor: '#ffffff'
     };
 
-    // Create visual artboard on canvas with containment
+    // Create enhanced artboard visual with containment
     const artboardRect = new Rect({
       left: newArtboard.x,
       top: newArtboard.y,
       width: newArtboard.width,
       height: newArtboard.height,
-      fill: 'rgba(255, 255, 255, 0.95)',
+      fill: newArtboard.backgroundColor || '#ffffff',
       stroke: '#3b82f6',
       strokeWidth: 2 / (zoom / 100),
       strokeDashArray: [5, 5],
       selectable: true,
       evented: true,
-      rx: 8,
-      ry: 8,
+      rx: 0,
+      ry: 0,
     });
 
-    // Add artboard label with zoom-independent size
     const artboardLabel = new FabricText(newArtboard.name, {
       left: newArtboard.x + 10,
       top: newArtboard.y - 30,
@@ -291,19 +318,53 @@ export const CanvasEditor = () => {
     (artboardLabel as any).isArtboard = true;
     (artboardLabel as any).artboardId = newArtboard.id;
 
-    // Fix the event handler - use the artboard object directly instead of e.target
+    // Enhanced movement with repulsion and element containment
     artboardRect.on('moving', (e) => {
-      const artboardObj = artboardRect; // Use the artboard object directly
-      const newPos = checkArtboardCollision(newArtboard, artboardObj.left || 0, artboardObj.top || 0);
-      artboardObj.set({ left: newPos.x, top: newPos.y });
+      const newPos = checkArtboardCollisionWithRepulsion(newArtboard, artboardRect.left || 0, artboardRect.top || 0);
+      
+      // Apply smooth animation for repulsion
+      if (newPos.hasRepulsion) {
+        artboardRect.animate('left', newPos.x, {
+          duration: 200,
+          easing: (t: number) => t * (2 - t) // easeOut
+        });
+        artboardRect.animate('top', newPos.y, {
+          duration: 200,
+          easing: (t: number) => t * (2 - t)
+        });
+      } else {
+        artboardRect.set({ left: newPos.x, top: newPos.y });
+      }
       
       artboardLabel.set({
-        left: newPos.x + 10,
-        top: newPos.y - 30
+        left: (artboardRect.left || 0) + 10,
+        top: (artboardRect.top || 0) - 30
       });
       
-      newArtboard.x = newPos.x;
-      newArtboard.y = newPos.y;
+      // Update artboard data
+      newArtboard.x = artboardRect.left || 0;
+      newArtboard.y = artboardRect.top || 0;
+      
+      // Move contained elements
+      const containedElements = findElementsInArtboard(fabricCanvas.getObjects(), newArtboard);
+      containedElements.forEach(element => {
+        if (!(element as any).isArtboard && (element as any).artboardId === newArtboard.id) {
+          const deltaX = (artboardRect.left || 0) - (newArtboard.x || 0);
+          const deltaY = (artboardRect.top || 0) - (newArtboard.y || 0);
+          element.set({
+            left: (element.left || 0) + deltaX,
+            top: (element.top || 0) + deltaY
+          });
+          element.setCoords();
+        }
+      });
+      
+      fabricCanvas.renderAll();
+    });
+
+    // Selection event for artboard management
+    artboardRect.on('selected', () => {
+      setSelectedArtboard(newArtboard);
     });
 
     fabricCanvas.add(artboardRect);
@@ -323,12 +384,75 @@ export const CanvasEditor = () => {
 
     fabricCanvas.renderAll();
     setArtboards(prev => [...prev, newArtboard]);
+    setSelectedArtboard(newArtboard);
     
     createNewVersion(`Created artboard: ${newArtboard.name}`, fabricCanvas.toJSON(), zoom, [...artboards, newArtboard]);
     
-    console.log(`Artboard created: ${newArtboard.name}`);
-    toast(`Artboard "${newArtboard.name}" created!`);
-  }, [fabricCanvas, zoom, artboards, createNewVersion, findNextArtboardPosition, checkArtboardCollision]);
+    console.log(`Enhanced artboard created: ${newArtboard.name}`);
+    toast(`Artboard "${newArtboard.name}" created with containment system!`);
+  }, [fabricCanvas, zoom, artboards, createNewVersion, findNextArtboardPosition, checkArtboardCollisionWithRepulsion]);
+
+  // Artboard management functions
+  const handleUpdateArtboard = useCallback((id: string, updates: Partial<Artboard>) => {
+    setArtboards(prev => prev.map(ab => 
+      ab.id === id ? { ...ab, ...updates } : ab
+    ));
+    
+    // Update visual artboard on canvas
+    if (fabricCanvas) {
+      const artboardElement = fabricCanvas.getObjects().find(obj => 
+        (obj as any).artboardId === id && obj.type === 'rect'
+      ) as Rect;
+      
+      if (artboardElement && updates.backgroundColor) {
+        artboardElement.set({ fill: updates.backgroundColor });
+        fabricCanvas.renderAll();
+      }
+    }
+  }, [fabricCanvas]);
+
+  const handleDeleteArtboard = useCallback((id: string) => {
+    if (!fabricCanvas) return;
+    
+    // Remove artboard elements from canvas
+    const artboardElements = fabricCanvas.getObjects().filter(obj => 
+      (obj as any).artboardId === id
+    );
+    
+    artboardElements.forEach(element => fabricCanvas.remove(element));
+    
+    // Remove contained elements
+    const containedElements = fabricCanvas.getObjects().filter(obj => 
+      (obj as any).artboardId === id
+    );
+    
+    containedElements.forEach(element => fabricCanvas.remove(element));
+    
+    setArtboards(prev => prev.filter(ab => ab.id !== id));
+    setSelectedArtboard(null);
+    fabricCanvas.renderAll();
+    
+    toast("Artboard deleted!");
+  }, [fabricCanvas]);
+
+  const handleZoomToArtboard = useCallback((id: string) => {
+    const artboard = getArtboardById(artboards, id);
+    if (!artboard || !fabricCanvas) return;
+    
+    const centerX = artboard.x + artboard.width / 2;
+    const centerY = artboard.y + artboard.height / 2;
+    
+    fabricCanvas.zoomToPoint(new Point(centerX, centerY), 1);
+    fabricCanvas.absolutePan(new Point(
+      fabricCanvas.width! / 2 - centerX,
+      fabricCanvas.height! / 2 - centerY
+    ));
+    
+    setZoom(100);
+    toast(`Zoomed to artboard: ${artboard.name}`);
+  }, [artboards, fabricCanvas]);
+
+  // Copy/Paste/Delete handlers, updateObjectsList, drawGrid, snapToGridFn, handleZoomChange, updateArtboardLabelsSize, handleFitToScreen, checkArtboardCollisionWithRepulsion, createArtboard, handleUpdateArtboard, handleDeleteArtboard, handleZoomToArtboard already defined above
 
   // Interactive element creation with preview
   const startInteractiveCreation = useCallback((elementType: string) => {
@@ -804,6 +928,33 @@ export const CanvasEditor = () => {
     fabricCanvas?.renderAll();
   };
 
+  // Enhanced object movement with artboard containment
+  useEffect(() => {
+    if (!fabricCanvas) return;
+
+    const handleObjectMoving = (e: any) => {
+      const obj = e.target;
+      if ((obj as any).isArtboard) return;
+
+      // Check if object should be contained in artboard
+      const containingArtboard = artboards.find(artboard => 
+        checkElementInArtboard(obj, artboard)
+      );
+
+      if (containingArtboard) {
+        (obj as any).artboardId = containingArtboard.id;
+        constrainElementToArtboard(obj, containingArtboard);
+        fabricCanvas.renderAll();
+      }
+    };
+
+    fabricCanvas.on('object:moving', handleObjectMoving);
+
+    return () => {
+      fabricCanvas.off('object:moving', handleObjectMoving);
+    };
+  }, [fabricCanvas, artboards]);
+
   return (
     <div className="h-screen w-screen bg-gray-50 relative overflow-hidden">
       {/* Canvas */}
@@ -828,14 +979,39 @@ export const CanvasEditor = () => {
         onCreateArtboard={createArtboard}
       />
 
-      {/* Properties Panel */}
-      {selectedObject && (
+      {/* Enhanced Properties Panel or Artboard Manager */}
+      {selectedObject && !(selectedObject as any).isArtboard ? (
         <MinimalPropertiesPanel 
           selectedObject={selectedObject} 
           onUpdate={(props) => {
             if (selectedObject && fabricCanvas) {
               selectedObject.set(props);
               fabricCanvas.renderAll();
+            }
+          }}
+        />
+      ) : (
+        <ArtboardManager
+          artboards={artboards}
+          selectedArtboard={selectedArtboard}
+          onUpdateArtboard={handleUpdateArtboard}
+          onDeleteArtboard={handleDeleteArtboard}
+          onDuplicateArtboard={(id) => {
+            const artboard = getArtboardById(artboards, id);
+            if (artboard) {
+              createArtboard({
+                ...artboard,
+                name: `${artboard.name} Copy`,
+                x: artboard.x + 50,
+                y: artboard.y + 50
+              });
+            }
+          }}
+          onZoomToArtboard={handleZoomToArtboard}
+          onExportArtboard={(id) => {
+            const artboard = getArtboardById(artboards, id);
+            if (artboard) {
+              toast(`Export functionality for "${artboard.name}" coming soon!`);
             }
           }}
         />

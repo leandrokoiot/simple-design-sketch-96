@@ -1,4 +1,3 @@
-
 export interface ProjectVersion {
   id: string;
   timestamp: Date;
@@ -16,6 +15,8 @@ export interface Artboard {
   x: number;
   y: number;
   isActive: boolean;
+  backgroundColor?: string;
+  elementIds?: string[];
 }
 
 export interface ProjectState {
