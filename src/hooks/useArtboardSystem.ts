@@ -110,9 +110,9 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
         
         // Atualiza posição com repulsão suave
         if (repulsedArtboard.x !== updatedArtboard.x || repulsedArtboard.y !== updatedArtboard.y) {
+          // Fixed animation calls for Fabric.js v6
           artboardRect.animate('left', repulsedArtboard.x, {
             duration: 200,
-            easing: (t: number) => t * (2 - t), // easeOutQuad
             onChange: () => {
               syncArtboardLabel(artboardRect, repulsedArtboard);
               canvas?.renderAll();
@@ -121,7 +121,6 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
           
           artboardRect.animate('top', repulsedArtboard.y, {
             duration: 200,
-            easing: (t: number) => t * (2 - t),
             onChange: () => {
               syncArtboardLabel(artboardRect, repulsedArtboard);
               canvas?.renderAll();
