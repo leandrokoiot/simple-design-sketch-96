@@ -1,5 +1,5 @@
 
-import { CanvasEditor } from "@/components/CanvasEditor";
+import { CanvasEditor } from "@/components/editor/CanvasEditor";
 
 const Index = () => {
   return <CanvasEditor />;
