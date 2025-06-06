@@ -7,9 +7,12 @@ import {
   Upload, 
   Share2,
   User,
-  ChevronDown
+  ChevronDown,
+  Undo,
+  Redo
 } from "lucide-react";
 import { ZoomControls } from "./ZoomControls";
+import { AlignmentTools } from "./AlignmentTools";
 import { useState } from "react";
 
 interface HeaderProps {
@@ -20,6 +23,13 @@ interface HeaderProps {
   onToggleGrid: () => void;
   snapToGrid: boolean;
   onToggleSnap: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onAlign: (alignment: string) => void;
+  onDistribute: (direction: 'horizontal' | 'vertical') => void;
+  hasSelection: boolean;
 }
 
 export const Header = ({ 
@@ -29,7 +39,14 @@ export const Header = ({
   showGrid,
   onToggleGrid,
   snapToGrid,
-  onToggleSnap
+  onToggleSnap,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  onAlign,
+  onDistribute,
+  hasSelection
 }: HeaderProps) => {
   const [isDark, setIsDark] = useState(false);
 
@@ -43,7 +60,7 @@ export const Header = ({
       {/* Left Section - Project Info */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold">Untitled Project</h1>
+          <h1 className="text-lg font-semibold">Design Editor</h1>
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
         </div>
         <div className="text-sm text-muted-foreground">
@@ -51,8 +68,44 @@ export const Header = ({
         </div>
       </div>
 
-      {/* Center Section - Canvas Controls */}
+      {/* Center Section - Controls */}
       <div className="flex items-center gap-4">
+        {/* Undo/Redo */}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="w-8 h-8 p-0"
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="w-8 h-8 p-0"
+            title="Redo (Ctrl+Shift+Z)"
+          >
+            <Redo className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <div className="w-px h-6 bg-border" />
+
+        {/* Alignment Tools */}
+        <AlignmentTools 
+          onAlign={onAlign}
+          onDistribute={onDistribute}
+          disabled={!hasSelection}
+        />
+
+        <div className="w-px h-6 bg-border" />
+
+        {/* Canvas Controls */}
         <div className="flex items-center gap-2">
           <Button
             variant={showGrid ? "default" : "ghost"}

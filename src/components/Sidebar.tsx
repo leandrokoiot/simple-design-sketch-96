@@ -11,19 +11,24 @@ import {
   Hand,
   Move,
   RotateCcw,
-  Settings
+  Settings,
+  Pen,
+  Group
 } from "lucide-react";
 
 interface SidebarProps {
-  activeTool: "select" | "rectangle" | "circle" | "text" | "line" | "hand";
-  onToolClick: (tool: "select" | "rectangle" | "circle" | "text" | "line" | "hand") => void;
+  activeTool: "select" | "rectangle" | "circle" | "text" | "line" | "hand" | "draw" | "image";
+  onToolClick: (tool: "select" | "rectangle" | "circle" | "text" | "line" | "hand" | "draw" | "image") => void;
   onClear: () => void;
+  onGroup: () => void;
+  onUngroup: () => void;
 }
 
-export const Sidebar = ({ activeTool, onToolClick, onClear }: SidebarProps) => {
+export const Sidebar = ({ activeTool, onToolClick, onClear, onGroup, onUngroup }: SidebarProps) => {
   const tools = [
     { id: "select", icon: MousePointer2, label: "Select", shortcut: "V" },
     { id: "hand", icon: Hand, label: "Hand", shortcut: "H" },
+    { id: "draw", icon: Pen, label: "Draw", shortcut: "P" },
   ];
 
   const shapes = [
@@ -95,6 +100,20 @@ export const Sidebar = ({ activeTool, onToolClick, onClear }: SidebarProps) => {
             <element.icon className="w-4 h-4" />
           </Button>
         ))}
+      </div>
+
+      {/* Group Section */}
+      <div className="p-2 space-y-1">
+        <div className="text-xs text-muted-foreground px-2 py-1">Group</div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onGroup}
+          className="w-12 h-12 p-0"
+          title="Group (Ctrl+G)"
+        >
+          <Group className="w-4 h-4" />
+        </Button>
       </div>
 
       {/* Bottom Actions */}
