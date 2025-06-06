@@ -3,6 +3,7 @@ import { FabricObject } from "fabric";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCanvas } from "@/contexts/CanvasContext";
 import { 
   ChevronDown, 
   ChevronRight, 
@@ -44,6 +45,8 @@ const fontWeights = [
 ];
 
 export const PropertiesPanel = ({ selectedObject, onUpdate }: PropertiesPanelProps) => {
+  const { fabricCanvas } = useCanvas();
+  
   const [fill, setFill] = useState("#000000");
   const [stroke, setStroke] = useState("#000000");
   const [strokeWidth, setStrokeWidth] = useState(1);
@@ -208,6 +211,18 @@ export const PropertiesPanel = ({ selectedObject, onUpdate }: PropertiesPanelPro
     if (shadowEnabled) {
       onUpdate({ shadow: newShadow });
     }
+  };
+
+  const handleBringToFront = () => {
+    if (!fabricCanvas || !selectedObject) return;
+    fabricCanvas.bringObjectToFront(selectedObject);
+    fabricCanvas.renderAll();
+  };
+
+  const handleSendToBack = () => {
+    if (!fabricCanvas || !selectedObject) return;
+    fabricCanvas.sendObjectToBack(selectedObject);
+    fabricCanvas.renderAll();
   };
 
   const CollapsibleSection = ({ 

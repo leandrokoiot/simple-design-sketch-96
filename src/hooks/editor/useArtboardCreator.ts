@@ -26,7 +26,7 @@ export const useArtboardCreator = () => {
     // Deactivate other artboards
     setArtboards(prev => prev.map(ab => ({ ...ab, isActive: false })));
 
-    const position = findNextArtboardPosition();
+    const position = findNextArtboardPosition(artboardData.width, artboardData.height);
 
     const newArtboard: Artboard = {
       ...artboardData,
