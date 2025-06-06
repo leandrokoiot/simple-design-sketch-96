@@ -1,15 +1,14 @@
-
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, Point } from "fabric";
-import { Toolbar } from "./Toolbar";
-import { ZoomControls } from "./ZoomControls";
+import { Sidebar } from "./Sidebar";
+import { Header } from "./Header";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { toast } from "sonner";
 
 export const CanvasEditor = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
-  const [activeTool, setActiveTool] = useState<"select" | "rectangle" | "circle" | "text" | "line">("select");
+  const [activeTool, setActiveTool] = useState<"select" | "rectangle" | "circle" | "text" | "line" | "hand">("select");
   const [zoom, setZoom] = useState(100);
   const [selectedObject, setSelectedObject] = useState<FabricObject | null>(null);
   const [showGrid, setShowGrid] = useState(true);
@@ -289,6 +288,8 @@ export const CanvasEditor = () => {
       fabricCanvas.add(line);
       fabricCanvas.setActiveObject(line);
       fabricCanvas.renderAll();
+    } else if (tool === "hand") {
+      fabricCanvas.isDrawingMode = true;
     }
   };
 
@@ -386,55 +387,35 @@ export const CanvasEditor = () => {
   };
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col">
+    <div className="h-screen bg-[hsl(var(--editor-bg))] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-gray-900">Design Editor</h1>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-sm">
-              <button
-                onClick={() => setShowGrid(!showGrid)}
-                className={`px-3 py-1 rounded ${
-                  showGrid ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
-                }`}
-              >
-                Grid
-              </button>
-              <button
-                onClick={() => setSnapToGrid(!snapToGrid)}
-                className={`px-3 py-1 rounded ${
-                  snapToGrid ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
-                }`}
-              >
-                Snap
-              </button>
-            </div>
-            <ZoomControls zoom={zoom} onZoomChange={handleZoom} onFitToScreen={handleFitToScreen} />
-          </div>
-        </div>
-      </div>
+      <Header
+        zoom={zoom}
+        onZoomChange={handleZoom}
+        onFitToScreen={handleFitToScreen}
+        showGrid={showGrid}
+        onToggleGrid={() => setShowGrid(!showGrid)}
+        snapToGrid={snapToGrid}
+        onToggleSnap={() => setSnapToGrid(!snapToGrid)}
+      />
 
-      {/* Main Editor */}
-      <div className="flex-1 relative overflow-hidden flex">
-        {/* Floating Toolbar */}
-        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10">
-          <Toolbar 
-            activeTool={activeTool} 
-            onToolClick={handleToolClick} 
-            onClear={handleClear}
-            onDelete={handleDelete}
-          />
-        </div>
+      {/* Main Editor Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar */}
+        <Sidebar
+          activeTool={activeTool}
+          onToolClick={handleToolClick}
+          onClear={handleClear}
+        />
 
-        {/* Canvas Container */}
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+        {/* Canvas Area */}
+        <div className="flex-1 flex items-center justify-center p-8 bg-[hsl(var(--editor-canvas-bg))] overflow-hidden">
+          <div className="bg-white rounded-xl shadow-2xl border border-border overflow-hidden">
             <canvas ref={canvasRef} className="block" />
           </div>
         </div>
 
-        {/* Properties Panel */}
+        {/* Right Properties Panel */}
         {selectedObject && (
           <PropertiesPanel 
             selectedObject={selectedObject} 
