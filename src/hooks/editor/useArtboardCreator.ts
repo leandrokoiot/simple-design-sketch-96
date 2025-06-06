@@ -98,11 +98,11 @@ export const useArtboardCreator = () => {
     artboardRect.set({ opacity: 0, scaleX: 0.8, scaleY: 0.8 });
     artboardLabel.set({ opacity: 0 });
     
-    // Fixed animation calls for Fabric.js v6
-    artboardRect.animate('opacity', 1, { duration: 300 });
-    artboardRect.animate('scaleX', 1, { duration: 300 });
-    artboardRect.animate('scaleY', 1, { duration: 300 });
-    artboardLabel.animate('opacity', 1, { duration: 300 });
+    // Fixed animation calls for Fabric.js v6 - using correct syntax
+    artboardRect.animate({ opacity: 1, duration: 300 });
+    artboardRect.animate({ scaleX: 1, duration: 300 });
+    artboardRect.animate({ scaleY: 1, duration: 300 });
+    artboardLabel.animate({ opacity: 1, duration: 300 });
 
     fabricCanvas.renderAll();
     setArtboards(prev => [...prev, repulsedArtboard]);
