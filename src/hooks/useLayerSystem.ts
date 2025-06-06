@@ -1,6 +1,6 @@
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { Canvas, FabricObject } from 'fabric';
+import { useState, useCallback, useRef } from 'react';
+import { FabricObject, Canvas as FabricCanvas } from 'fabric';
 import { toast } from 'sonner';
 
 export interface LayerInfo {
@@ -9,217 +9,190 @@ export interface LayerInfo {
   type: string;
   visible: boolean;
   locked: boolean;
-  opacity: number;
-  artboardId?: string;
   zIndex: number;
+  object: FabricObject;
 }
 
-export const useLayerSystem = (canvas: Canvas | null) => {
+export const useLayerSystem = (canvas: FabricCanvas | null) => {
   const [layers, setLayers] = useState<LayerInfo[]>([]);
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const layerIdCounterRef = useRef(0);
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
+  const generateLayerId = useCallback(() => {
+    return `layer_${++layerIdCounterRef.current}`;
+  }, []);
+
+  const getLayerName = useCallback((obj: FabricObject, index: number) => {
+    const typeNames = {
+      rect: 'Rectangle',
+      circle: 'Circle',
+      textbox: 'Text',
+      text: 'Text',
+      line: 'Line',
+      image: 'Image',
+      path: 'Drawing'
     };
+    
+    return `${typeNames[obj.type as keyof typeof typeNames] || 'Object'} ${index + 1}`;
   }, []);
 
   const updateLayers = useCallback(() => {
     if (!canvas) return;
-    
-    // Debounce layer updates for performance
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
 
-    updateTimeoutRef.current = setTimeout(() => {
-      const objects = canvas.getObjects();
-      const layerInfos: LayerInfo[] = objects
-        .filter(obj => !(obj as any).isGridLine && !(obj as any).isArtboard)
-        .map((obj, index) => {
-          // Ensure object has an ID
-          if (!(obj as any).id) {
-            (obj as any).id = `layer-${Date.now()}-${index}`;
-          }
-          
-          return {
-            id: (obj as any).id,
-            name: (obj as any).name || `${obj.type} ${index + 1}`,
-            type: obj.type || 'object',
-            visible: obj.visible !== false,
-            locked: !obj.selectable,
-            opacity: obj.opacity || 1,
-            artboardId: (obj as any).artboardId,
-            zIndex: index
-          };
-        });
+    const objects = canvas.getObjects().filter(obj => 
+      !(obj as any).isArtboard && !(obj as any).isGridLine
+    );
+
+    const newLayers: LayerInfo[] = objects.map((obj, index) => {
+      const existingLayer = layers.find(l => l.object === obj);
+      const objId = (obj as any).id || generateLayerId();
       
-      setLayers(layerInfos);
-      updateTimeoutRef.current = null;
-    }, 50); // 50ms debounce
-  }, [canvas]);
-
-  const getObjectById = useCallback((id: string): FabricObject | null => {
-    if (!canvas) return null;
-    return canvas.getObjects().find(obj => (obj as any).id === id) || null;
-  }, [canvas]);
-
-  const toggleLayerVisibility = useCallback((id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    obj.set({ visible: !obj.visible });
-    canvas.renderAll();
-    updateLayers();
-    
-    toast(`Camada ${obj.visible ? 'visível' : 'oculta'}`);
-  }, [canvas, getObjectById, updateLayers]);
-
-  const toggleLayerLock = useCallback((id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    const locked = !obj.selectable;
-    obj.set({ 
-      selectable: locked,
-      evented: locked,
-      moveable: locked,
-      hoverCursor: locked ? 'default' : 'move'
-    });
-    
-    if (!locked && canvas.getActiveObject() === obj) {
-      canvas.discardActiveObject();
-    }
-    
-    canvas.renderAll();
-    updateLayers();
-    
-    toast(`Camada ${locked ? 'desbloqueada' : 'bloqueada'}`);
-  }, [canvas, getObjectById, updateLayers]);
-
-  const setLayerOpacity = useCallback((id: string, opacity: number) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    obj.set({ opacity: Math.max(0, Math.min(1, opacity)) });
-    canvas.renderAll();
-    updateLayers();
-  }, [canvas, getObjectById, updateLayers]);
-
-  const renameLayer = useCallback((id: string, name: string) => {
-    const obj = getObjectById(id);
-    if (!obj) return;
-    
-    (obj as any).name = name;
-    updateLayers();
-    toast(`Camada renomeada para "${name}"`);
-  }, [getObjectById, updateLayers]);
-
-  const moveLayerUp = useCallback((id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    canvas.bringObjectForward(obj);
-    canvas.renderAll();
-    updateLayers();
-    toast("Camada movida para frente");
-  }, [canvas, getObjectById, updateLayers]);
-
-  const moveLayerDown = useCallback((id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    canvas.sendObjectBackwards(obj);
-    canvas.renderAll();
-    updateLayers();
-    toast("Camada movida para trás");
-  }, [canvas, getObjectById, updateLayers]);
-
-  const moveLayerToTop = useCallback((id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    canvas.bringObjectToFront(obj);
-    canvas.renderAll();
-    updateLayers();
-    toast("Camada movida para o topo");
-  }, [canvas, getObjectById, updateLayers]);
-
-  const moveLayerToBottom = useCallback((id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    canvas.sendObjectToBack(obj);
-    canvas.renderAll();
-    updateLayers();
-    toast("Camada movida para o fundo");
-  }, [canvas, getObjectById, updateLayers]);
-
-  const duplicateLayer = useCallback(async (id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    try {
-      const cloned = await obj.clone();
-      cloned.set({
-        left: (cloned.left || 0) + 20,
-        top: (cloned.top || 0) + 20
-      });
-      
-      // Generate new ID for cloned object
-      (cloned as any).id = `layer-${Date.now()}-cloned`;
-      
-      // Preserve artboard assignment
-      if ((obj as any).artboardId) {
-        (cloned as any).artboardId = (obj as any).artboardId;
+      if (!existingLayer) {
+        (obj as any).id = objId;
       }
-      
-      canvas.add(cloned);
-      canvas.setActiveObject(cloned);
+
+      return {
+        id: existingLayer?.id || objId,
+        name: existingLayer?.name || getLayerName(obj, index),
+        type: obj.type,
+        visible: obj.visible !== false,
+        locked: (obj as any).lockMovementX || false,
+        zIndex: canvas.getObjects().indexOf(obj),
+        object: obj
+      };
+    });
+
+    setLayers(newLayers);
+  }, [canvas, layers, generateLayerId, getLayerName]);
+
+  const selectLayer = useCallback((layerId: string) => {
+    if (!canvas) return;
+
+    const layer = layers.find(l => l.id === layerId);
+    if (layer) {
+      canvas.setActiveObject(layer.object);
+      canvas.renderAll();
+    }
+  }, [canvas, layers]);
+
+  const toggleLayerVisibility = useCallback((layerId: string) => {
+    if (!canvas) return;
+
+    const layer = layers.find(l => l.id === layerId);
+    if (layer) {
+      const newVisible = !layer.visible;
+      layer.object.set({ visible: newVisible });
       canvas.renderAll();
       updateLayers();
       
-      toast("Camada duplicada");
-    } catch (error) {
-      console.error('Erro ao duplicar camada:', error);
-      toast("Erro ao duplicar camada");
+      toast(`Layer ${newVisible ? 'shown' : 'hidden'}`);
     }
-  }, [canvas, getObjectById, updateLayers]);
+  }, [canvas, layers, updateLayers]);
 
-  const deleteLayer = useCallback((id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
-    
-    canvas.remove(obj);
-    canvas.renderAll();
-    updateLayers();
-    toast("Camada removida");
-  }, [canvas, getObjectById, updateLayers]);
+  const toggleLayerLock = useCallback((layerId: string) => {
+    if (!canvas) return;
 
-  const selectLayer = useCallback((id: string) => {
-    const obj = getObjectById(id);
-    if (!obj || !canvas) return;
+    const layer = layers.find(l => l.id === layerId);
+    if (layer) {
+      const newLocked = !layer.locked;
+      layer.object.set({
+        lockMovementX: newLocked,
+        lockMovementY: newLocked,
+        lockRotation: newLocked,
+        lockScalingX: newLocked,
+        lockScalingY: newLocked,
+        selectable: !newLocked,
+        evented: !newLocked
+      });
+      canvas.renderAll();
+      updateLayers();
+      
+      toast(`Layer ${newLocked ? 'locked' : 'unlocked'}`);
+    }
+  }, [canvas, layers, updateLayers]);
+
+  const deleteLayer = useCallback((layerId: string) => {
+    if (!canvas) return;
+
+    const layer = layers.find(l => l.id === layerId);
+    if (layer) {
+      canvas.remove(layer.object);
+      canvas.renderAll();
+      updateLayers();
+      
+      toast('Layer deleted');
+    }
+  }, [canvas, layers, updateLayers]);
+
+  const duplicateLayer = useCallback(async (layerId: string) => {
+    if (!canvas) return;
+
+    const layer = layers.find(l => l.id === layerId);
+    if (layer) {
+      try {
+        const cloned = await layer.object.clone();
+        cloned.set({
+          left: (cloned.left || 0) + 20,
+          top: (cloned.top || 0) + 20,
+        });
+        
+        (cloned as any).id = generateLayerId();
+        canvas.add(cloned);
+        canvas.setActiveObject(cloned);
+        canvas.renderAll();
+        updateLayers();
+        
+        toast('Layer duplicated');
+      } catch (error) {
+        console.error('Failed to duplicate layer:', error);
+        toast('Failed to duplicate layer');
+      }
+    }
+  }, [canvas, layers, updateLayers, generateLayerId]);
+
+  const moveLayerUp = useCallback((layerId: string) => {
+    if (!canvas) return;
+
+    const layer = layers.find(l => l.id === layerId);
+    if (layer) {
+      canvas.bringObjectForward(layer.object);
+      canvas.renderAll();
+      updateLayers();
+      
+      toast('Layer moved up');
+    }
+  }, [canvas, layers, updateLayers]);
+
+  const moveLayerDown = useCallback((layerId: string) => {
+    if (!canvas) return;
+
+    const layer = layers.find(l => l.id === layerId);
+    if (layer) {
+      canvas.sendObjectBackwards(layer.object);
+      canvas.renderAll();
+      updateLayers();
+      
+      toast('Layer moved down');
+    }
+  }, [canvas, layers, updateLayers]);
+
+  const renameLayer = useCallback((layerId: string, newName: string) => {
+    setLayers(prev => prev.map(layer => 
+      layer.id === layerId ? { ...layer, name: newName } : layer
+    ));
     
-    canvas.setActiveObject(obj);
-    canvas.renderAll();
-  }, [canvas, getObjectById]);
+    toast('Layer renamed');
+  }, []);
 
   return {
     layers,
     updateLayers,
+    selectLayer,
     toggleLayerVisibility,
     toggleLayerLock,
-    setLayerOpacity,
-    renameLayer,
+    deleteLayer,
+    duplicateLayer,
     moveLayerUp,
     moveLayerDown,
-    moveLayerToTop,
-    moveLayerToBottom,
-    duplicateLayer,
-    deleteLayer,
-    selectLayer
+    renameLayer
   };
 };
