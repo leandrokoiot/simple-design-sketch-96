@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from "react";
 import { FabricObject } from "fabric";
+import { TextPropertiesPanel } from "./TextPropertiesPanel";
 
 interface MinimalPropertiesPanelProps {
   selectedObject: FabricObject;
@@ -19,6 +20,15 @@ export const MinimalPropertiesPanel = ({ selectedObject, onUpdate }: MinimalProp
       setBorderRadius((selectedObject as any).rx || 0);
     }
   }, [selectedObject]);
+
+  // If it's a text object, show the text properties panel
+  if (selectedObject && (selectedObject.type === 'textbox' || selectedObject.type === 'text')) {
+    return (
+      <div className="fixed top-6 left-6 z-50">
+        <TextPropertiesPanel selectedObject={selectedObject} onUpdate={onUpdate} />
+      </div>
+    );
+  }
 
   const handleFillChange = (newFill: string) => {
     setFill(newFill);

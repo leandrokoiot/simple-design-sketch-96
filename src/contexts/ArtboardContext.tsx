@@ -11,6 +11,7 @@ interface ArtboardContextType {
   handleUpdateArtboard: (id: string, updates: Partial<Artboard>) => void;
   handleDeleteArtboard: (id: string, fabricCanvas?: any) => void;
   findOptimalPosition: (width: number, height: number) => { x: number; y: number };
+  findNextArtboardPosition: (width: number, height: number) => { x: number; y: number };
 }
 
 const ArtboardContext = createContext<ArtboardContextType | null>(null);
@@ -88,6 +89,10 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
     return { x: maxRight + buffer, y: 100 };
   }, [artboards]);
 
+  const findNextArtboardPosition = useCallback((width: number, height: number) => {
+    return findOptimalPosition(width, height);
+  }, [findOptimalPosition]);
+
   const value: ArtboardContextType = {
     artboards,
     setArtboards,
@@ -96,6 +101,7 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
     handleUpdateArtboard,
     handleDeleteArtboard,
     findOptimalPosition,
+    findNextArtboardPosition,
   };
 
   return (
