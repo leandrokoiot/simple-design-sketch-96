@@ -10,12 +10,14 @@ interface ZoomControlsProps {
 
 export const ZoomControls = ({ zoom, onZoomChange, onFitToScreen }: ZoomControlsProps) => {
   const handleZoomIn = () => {
-    const newZoom = Math.min(zoom + 25, 300);
+    const zoomStep = zoom < 100 ? 10 : zoom < 200 ? 25 : 50;
+    const newZoom = Math.min(zoom + zoomStep, 500);
     onZoomChange(newZoom);
   };
 
   const handleZoomOut = () => {
-    const newZoom = Math.max(zoom - 25, 25);
+    const zoomStep = zoom <= 100 ? 10 : zoom <= 200 ? 25 : 50;
+    const newZoom = Math.max(zoom - zoomStep, 10);
     onZoomChange(newZoom);
   };
 
@@ -24,13 +26,13 @@ export const ZoomControls = ({ zoom, onZoomChange, onFitToScreen }: ZoomControls
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-lg border shadow-lg p-2">
       <Button
         variant="ghost"
         size="sm"
         onClick={handleZoomOut}
         className="h-8 w-8 p-0"
-        title="Zoom Out"
+        title="Zoom Out (10-500%)"
       >
         <ZoomOut className="h-4 w-4" />
       </Button>
@@ -40,7 +42,7 @@ export const ZoomControls = ({ zoom, onZoomChange, onFitToScreen }: ZoomControls
         size="sm"
         onClick={handleZoomReset}
         className="h-8 px-3 min-w-[60px] text-sm font-medium"
-        title="Reset Zoom"
+        title="Reset Zoom to 100%"
       >
         {zoom}%
       </Button>
@@ -50,7 +52,7 @@ export const ZoomControls = ({ zoom, onZoomChange, onFitToScreen }: ZoomControls
         size="sm"
         onClick={handleZoomIn}
         className="h-8 w-8 p-0"
-        title="Zoom In"
+        title="Zoom In (10-500%)"
       >
         <ZoomIn className="h-4 w-4" />
       </Button>

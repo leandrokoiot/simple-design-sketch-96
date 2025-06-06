@@ -21,18 +21,12 @@ export const CanvasEditor = () => {
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [artboards, setArtboards] = useState<Artboard[]>([]);
+  const [isCreatingElement, setIsCreatingElement] = useState(false);
+  const [previewElement, setPreviewElement] = useState<FabricObject | null>(null);
 
   const { createNewVersion } = useVersionControl();
 
   const gridSize = 20;
-
-  // Update objects list with debounce
-  const updateObjectsList = useCallback(() => {
-    if (!fabricCanvas) return;
-    const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine && !(obj as any).isArtboard);
-    setCanvasObjects(objects);
-    console.log(`Objects updated: ${objects.length} objects`);
-  }, [fabricCanvas]);
 
   // Copy/Paste/Delete handlers
   const handleCopy = useCallback(() => {
@@ -70,6 +64,14 @@ export const CanvasEditor = () => {
       fabricCanvas.renderAll();
       toast(`Deleted ${activeObjects.length} object(s)`);
     }
+  }, [fabricCanvas]);
+
+  // Update objects list with debounce
+  const updateObjectsList = useCallback(() => {
+    if (!fabricCanvas) return;
+    const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine && !(obj as any).isArtboard);
+    setCanvasObjects(objects);
+    console.log(`Objects updated: ${objects.length} objects`);
   }, [fabricCanvas]);
 
   // Draw grid on canvas
@@ -123,19 +125,44 @@ export const CanvasEditor = () => {
     });
   }, [snapToGrid, gridSize]);
 
-  // Zoom functionality - FIXED
+  // Enhanced zoom functionality with better limits
   const handleZoomChange = useCallback((newZoom: number) => {
     if (!fabricCanvas) return;
     
-    const zoomLevel = newZoom / 100;
-    setZoom(newZoom);
+    // Expanded zoom range
+    const clampedZoom = Math.max(10, Math.min(500, newZoom));
+    const zoomLevel = clampedZoom / 100;
+    setZoom(clampedZoom);
     
     const center = fabricCanvas.getCenter();
     fabricCanvas.zoomToPoint(new Point(center.left, center.top), zoomLevel);
-    fabricCanvas.renderAll();
     
-    console.log(`Zoom changed to ${newZoom}%`);
+    // Update artboard labels to maintain fixed size
+    updateArtboardLabelsSize(fabricCanvas, zoomLevel);
+    
+    fabricCanvas.renderAll();
+    console.log(`Zoom changed to ${clampedZoom}%`);
   }, [fabricCanvas]);
+
+  // Update artboard labels to maintain consistent size regardless of zoom
+  const updateArtboardLabelsSize = useCallback((canvas: FabricCanvas, zoomLevel: number) => {
+    const objects = canvas.getObjects();
+    objects.forEach(obj => {
+      if ((obj as any).isArtboard && obj.type === 'text') {
+        const baseSize = 14;
+        obj.set({
+          fontSize: baseSize / zoomLevel,
+          strokeWidth: (obj.strokeWidth || 0) / zoomLevel
+        });
+      }
+      if ((obj as any).isArtboard && obj.type === 'rect') {
+        const baseStrokeWidth = 2;
+        obj.set({
+          strokeWidth: baseStrokeWidth / zoomLevel
+        });
+      }
+    });
+  }, []);
 
   const handleFitToScreen = useCallback(() => {
     if (!fabricCanvas) return;
@@ -150,8 +177,32 @@ export const CanvasEditor = () => {
     const optimalScale = Math.min(scaleX, scaleY);
     
     const newZoom = Math.round(optimalScale * 100);
-    handleZoomChange(Math.max(25, Math.min(300, newZoom)));
+    handleZoomChange(Math.max(10, Math.min(500, newZoom)));
   }, [fabricCanvas, handleZoomChange]);
+
+  // Check for artboard collision/proximity
+  const checkArtboardCollision = useCallback((movingArtboard: Artboard, newX: number, newY: number) => {
+    const buffer = 50; // Minimum distance between artboards
+    
+    for (const artboard of artboards) {
+      if (artboard.id === movingArtboard.id) continue;
+      
+      const distance = Math.sqrt(
+        Math.pow(newX - artboard.x, 2) + Math.pow(newY - artboard.y, 2)
+      );
+      
+      if (distance < buffer) {
+        // Calculate repulsion direction
+        const angle = Math.atan2(newY - artboard.y, newX - artboard.x);
+        return {
+          x: artboard.x + Math.cos(angle) * buffer,
+          y: artboard.y + Math.sin(angle) * buffer
+        };
+      }
+    }
+    
+    return { x: newX, y: newY };
+  }, [artboards]);
 
   // Find next available position for artboard to avoid overlap
   const findNextArtboardPosition = useCallback(() => {
@@ -159,23 +210,36 @@ export const CanvasEditor = () => {
       return { x: 100, y: 100 };
     }
 
-    // Find the rightmost artboard
-    let maxRight = 0;
-    let currentRowY = 100;
+    const buffer = 50;
+    let attempts = 0;
+    const maxAttempts = 100;
     
-    artboards.forEach(artboard => {
-      const right = artboard.x + artboard.width;
-      if (right > maxRight) {
-        maxRight = right;
-        currentRowY = artboard.y;
+    while (attempts < maxAttempts) {
+      const x = 100 + (attempts % 5) * 400;
+      const y = 100 + Math.floor(attempts / 5) * 300;
+      
+      let collision = false;
+      for (const artboard of artboards) {
+        const distance = Math.sqrt(Math.pow(x - artboard.x, 2) + Math.pow(y - artboard.y, 2));
+        if (distance < buffer) {
+          collision = true;
+          break;
+        }
       }
-    });
-
-    // Place new artboard to the right with some spacing
-    return { x: maxRight + 50, y: currentRowY };
+      
+      if (!collision) {
+        return { x, y };
+      }
+      
+      attempts++;
+    }
+    
+    // Fallback: place far to the right
+    const maxRight = Math.max(...artboards.map(ab => ab.x + ab.width));
+    return { x: maxRight + buffer, y: 100 };
   }, [artboards]);
 
-  // Artboard functionality - IMPROVED
+  // Enhanced artboard creation with containment system
   const createArtboard = useCallback((artboardData: Omit<Artboard, 'id'>) => {
     if (!fabricCanvas) return;
 
@@ -190,12 +254,11 @@ export const CanvasEditor = () => {
       id: `artboard_${Date.now()}`,
       x: position.x,
       y: position.y,
-      // Ensure reasonable size limits
-      width: Math.min(artboardData.width, 1200),
-      height: Math.min(artboardData.height, 800)
+      width: Math.min(artboardData.width, 800),
+      height: Math.min(artboardData.height, 600)
     };
 
-    // Create visual artboard on canvas
+    // Create visual artboard on canvas with containment
     const artboardRect = new Rect({
       left: newArtboard.x,
       top: newArtboard.y,
@@ -203,19 +266,19 @@ export const CanvasEditor = () => {
       height: newArtboard.height,
       fill: 'rgba(255, 255, 255, 0.95)',
       stroke: '#3b82f6',
-      strokeWidth: 2,
+      strokeWidth: 2 / (zoom / 100),
       strokeDashArray: [5, 5],
-      selectable: false,
-      evented: false,
+      selectable: true,
+      evented: true,
       rx: 8,
       ry: 8,
     });
 
-    // Add artboard label
+    // Add artboard label with zoom-independent size
     const artboardLabel = new FabricText(newArtboard.name, {
       left: newArtboard.x + 10,
-      top: newArtboard.y - 25,
-      fontSize: 14,
+      top: newArtboard.y - 30,
+      fontSize: 14 / (zoom / 100),
       fontFamily: 'Inter, sans-serif',
       fill: '#3b82f6',
       selectable: false,
@@ -224,13 +287,30 @@ export const CanvasEditor = () => {
 
     (artboardRect as any).isArtboard = true;
     (artboardRect as any).artboardId = newArtboard.id;
+    (artboardRect as any).artboardData = newArtboard;
     (artboardLabel as any).isArtboard = true;
     (artboardLabel as any).artboardId = newArtboard.id;
+
+    // Add drag constraints and collision detection
+    artboardRect.on('moving', (e) => {
+      const obj = e.target as FabricObject;
+      const newPos = checkArtboardCollision(newArtboard, obj.left || 0, obj.top || 0);
+      obj.set({ left: newPos.x, top: newPos.y });
+      
+      // Update label position
+      artboardLabel.set({
+        left: newPos.x + 10,
+        top: newPos.y - 30
+      });
+      
+      // Update artboard data
+      newArtboard.x = newPos.x;
+      newArtboard.y = newPos.y;
+    });
 
     fabricCanvas.add(artboardRect);
     fabricCanvas.add(artboardLabel);
     fabricCanvas.sendObjectToBack(artboardRect);
-    fabricCanvas.sendObjectToBack(artboardLabel);
 
     // Auto-adjust canvas size if needed
     const requiredWidth = newArtboard.x + newArtboard.width + 100;
@@ -244,15 +324,146 @@ export const CanvasEditor = () => {
     }
 
     fabricCanvas.renderAll();
-
     setArtboards(prev => [...prev, newArtboard]);
     
-    // Create version
     createNewVersion(`Created artboard: ${newArtboard.name}`, fabricCanvas.toJSON(), zoom, [...artboards, newArtboard]);
     
     console.log(`Artboard created: ${newArtboard.name}`);
     toast(`Artboard "${newArtboard.name}" created!`);
-  }, [fabricCanvas, zoom, artboards, createNewVersion, findNextArtboardPosition]);
+  }, [fabricCanvas, zoom, artboards, createNewVersion, findNextArtboardPosition, checkArtboardCollision]);
+
+  // Interactive element creation with preview
+  const startInteractiveCreation = useCallback((elementType: string) => {
+    if (!fabricCanvas) return;
+    
+    setIsCreatingElement(true);
+    setActiveTool("select");
+    
+    let isMouseDown = false;
+    let startPoint: Point | null = null;
+    
+    const handleMouseDown = (opt: any) => {
+      if (!isCreatingElement) return;
+      
+      isMouseDown = true;
+      const pointer = fabricCanvas.getPointer(opt.e);
+      startPoint = new Point(pointer.x, pointer.y);
+      
+      // Create preview element
+      let preview: FabricObject;
+      
+      switch (elementType) {
+        case 'rectangle':
+          preview = new Rect({
+            left: pointer.x,
+            top: pointer.y,
+            width: 0,
+            height: 0,
+            fill: 'rgba(0, 0, 0, 0.3)',
+            stroke: '#000',
+            strokeWidth: 1,
+            strokeDashArray: [5, 5]
+          });
+          break;
+        case 'circle':
+          preview = new Circle({
+            left: pointer.x,
+            top: pointer.y,
+            radius: 0,
+            fill: 'rgba(0, 0, 0, 0.3)',
+            stroke: '#000',
+            strokeWidth: 1,
+            strokeDashArray: [5, 5]
+          });
+          break;
+        default:
+          return;
+      }
+      
+      (preview as any).isPreview = true;
+      preview.selectable = false;
+      preview.evented = false;
+      
+      fabricCanvas.add(preview);
+      setPreviewElement(preview);
+      fabricCanvas.renderAll();
+    };
+    
+    const handleMouseMove = (opt: any) => {
+      if (!isMouseDown || !startPoint || !previewElement) return;
+      
+      const pointer = fabricCanvas.getPointer(opt.e);
+      const width = Math.abs(pointer.x - startPoint.x);
+      const height = Math.abs(pointer.y - startPoint.y);
+      
+      if (elementType === 'rectangle') {
+        previewElement.set({
+          left: Math.min(startPoint.x, pointer.x),
+          top: Math.min(startPoint.y, pointer.y),
+          width: width,
+          height: height
+        });
+      } else if (elementType === 'circle') {
+        const radius = Math.max(width, height) / 2;
+        previewElement.set({
+          left: startPoint.x - radius,
+          top: startPoint.y - radius,
+          radius: radius
+        });
+      }
+      
+      fabricCanvas.renderAll();
+    };
+    
+    const handleMouseUp = () => {
+      if (!isMouseDown || !previewElement) return;
+      
+      isMouseDown = false;
+      setIsCreatingElement(false);
+      
+      // Remove preview
+      fabricCanvas.remove(previewElement);
+      
+      // Create final element
+      let finalElement: FabricObject;
+      
+      if (elementType === 'rectangle') {
+        finalElement = new Rect({
+          left: previewElement.left,
+          top: previewElement.top,
+          width: (previewElement as any).width || 50,
+          height: (previewElement as any).height || 50,
+          fill: '#000000'
+        });
+      } else {
+        finalElement = new Circle({
+          left: previewElement.left,
+          top: previewElement.top,
+          radius: (previewElement as any).radius || 25,
+          fill: '#000000'
+        });
+      }
+      
+      fabricCanvas.add(finalElement);
+      fabricCanvas.setActiveObject(finalElement);
+      fabricCanvas.renderAll();
+      
+      setPreviewElement(null);
+      
+      // Remove event listeners
+      fabricCanvas.off('mouse:down', handleMouseDown);
+      fabricCanvas.off('mouse:move', handleMouseMove);
+      fabricCanvas.off('mouse:up', handleMouseUp);
+      
+      toast(`${elementType} created!`);
+    };
+    
+    // Add event listeners
+    fabricCanvas.on('mouse:down', handleMouseDown);
+    fabricCanvas.on('mouse:move', handleMouseMove);
+    fabricCanvas.on('mouse:up', handleMouseUp);
+    
+  }, [fabricCanvas, isCreatingElement, previewElement]);
 
   // Initialize canvas only once
   useEffect(() => {
@@ -268,15 +479,18 @@ export const CanvasEditor = () => {
     canvas.selection = true;
     canvas.preserveObjectStacking = true;
 
-    // Mouse wheel zoom - FIXED
+    // Enhanced mouse wheel zoom with better increments
     canvas.on('mouse:wheel', (opt) => {
       const delta = opt.e.deltaY;
       let newZoom = zoom;
       
+      // Better zoom increments
+      const zoomStep = zoom < 100 ? 5 : zoom < 200 ? 10 : 25;
+      
       if (delta > 0) {
-        newZoom = Math.max(25, zoom - 10);
+        newZoom = Math.max(10, zoom - zoomStep);
       } else {
-        newZoom = Math.min(300, zoom + 10);
+        newZoom = Math.min(500, zoom + zoomStep);
       }
       
       if (newZoom !== zoom) {
@@ -284,6 +498,7 @@ export const CanvasEditor = () => {
         const zoomLevel = newZoom / 100;
         canvas.zoomToPoint(new Point(pointer.x, pointer.y), zoomLevel);
         setZoom(newZoom);
+        updateArtboardLabelsSize(canvas, zoomLevel);
       }
       
       opt.e.preventDefault();
@@ -334,6 +549,13 @@ export const CanvasEditor = () => {
     };
   }, []);
 
+  // Update zoom on canvas change
+  useEffect(() => {
+    if (fabricCanvas) {
+      updateArtboardLabelsSize(fabricCanvas, zoom / 100);
+    }
+  }, [fabricCanvas, zoom, updateArtboardLabelsSize]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -356,14 +578,24 @@ export const CanvasEditor = () => {
             handlePaste();
           }
           break;
+        case 'Escape':
+          if (isCreatingElement) {
+            setIsCreatingElement(false);
+            if (previewElement && fabricCanvas) {
+              fabricCanvas.remove(previewElement);
+              setPreviewElement(null);
+              fabricCanvas.renderAll();
+            }
+          }
+          break;
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleDelete, handleCopy, handlePaste]);
+  }, [handleDelete, handleCopy, handlePaste, isCreatingElement, previewElement, fabricCanvas]);
 
-  // Tool handlers
+  // Enhanced tool handlers with interactive creation
   const handleToolClick = useCallback((tool: typeof activeTool) => {
     console.log(`Tool clicked: ${tool}`);
     setActiveTool(tool);
@@ -375,6 +607,12 @@ export const CanvasEditor = () => {
 
     fabricCanvas.isDrawingMode = false;
 
+    // For shapes, start interactive creation
+    if (tool === "rectangle" || tool === "circle") {
+      startInteractiveCreation(tool);
+      return;
+    }
+
     const canvasCenter = {
       x: fabricCanvas.width! / 2,
       y: fabricCanvas.height! / 2
@@ -382,26 +620,7 @@ export const CanvasEditor = () => {
 
     let newObject: FabricObject | null = null;
 
-    if (tool === "rectangle") {
-      console.log("Creating rectangle...");
-      newObject = new Rect({
-        left: canvasCenter.x - 75,
-        top: canvasCenter.y - 50,
-        width: 150,
-        height: 100,
-        fill: "#000000",
-        rx: 0,
-        ry: 0,
-      });
-    } else if (tool === "circle") {
-      console.log("Creating circle...");
-      newObject = new Circle({
-        left: canvasCenter.x - 50,
-        top: canvasCenter.y - 50,
-        radius: 50,
-        fill: "#000000",
-      });
-    } else if (tool === "text") {
+    if (tool === "text") {
       console.log("Creating text...");
       newObject = new FabricText("Text", {
         left: canvasCenter.x - 25,
@@ -430,10 +649,9 @@ export const CanvasEditor = () => {
       console.log(`${tool} added successfully`);
       toast(`${tool} added to canvas`);
       
-      // Create version for object creation
       createNewVersion(`Added ${tool}`, fabricCanvas.toJSON(), zoom, artboards);
     }
-  }, [fabricCanvas, zoom, artboards, createNewVersion]);
+  }, [fabricCanvas, zoom, artboards, createNewVersion, startInteractiveCreation]);
 
   const handleSelectObject = (obj: FabricObject) => {
     if (!fabricCanvas) return;
@@ -632,6 +850,13 @@ export const CanvasEditor = () => {
         onSelectObject={handleSelectObject}
         onDeleteObject={handleDeleteObject}
       />
+
+      {/* Instructions overlay for interactive creation */}
+      {isCreatingElement && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-black/80 text-white px-4 py-2 rounded-lg">
+          Clique e arraste para criar o elemento. Pressione ESC para cancelar.
+        </div>
+      )}
     </div>
   );
 };
