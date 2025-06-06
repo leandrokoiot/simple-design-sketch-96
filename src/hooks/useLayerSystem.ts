@@ -1,5 +1,5 @@
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Canvas, FabricObject } from 'fabric';
 import { toast } from 'sonner';
 
@@ -16,25 +16,50 @@ export interface LayerInfo {
 
 export const useLayerSystem = (canvas: Canvas | null) => {
   const [layers, setLayers] = useState<LayerInfo[]>([]);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const updateLayers = useCallback(() => {
     if (!canvas) return;
     
-    const objects = canvas.getObjects();
-    const layerInfos: LayerInfo[] = objects
-      .filter(obj => !(obj as any).isGridLine && !(obj as any).isArtboard)
-      .map((obj, index) => ({
-        id: (obj as any).id || `layer-${index}`,
-        name: (obj as any).name || `${obj.type} ${index + 1}`,
-        type: obj.type || 'object',
-        visible: obj.visible !== false,
-        locked: !obj.selectable,
-        opacity: obj.opacity || 1,
-        artboardId: (obj as any).artboardId,
-        zIndex: index
-      }));
-    
-    setLayers(layerInfos);
+    // Debounce layer updates for performance
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    updateTimeoutRef.current = setTimeout(() => {
+      const objects = canvas.getObjects();
+      const layerInfos: LayerInfo[] = objects
+        .filter(obj => !(obj as any).isGridLine && !(obj as any).isArtboard)
+        .map((obj, index) => {
+          // Ensure object has an ID
+          if (!(obj as any).id) {
+            (obj as any).id = `layer-${Date.now()}-${index}`;
+          }
+          
+          return {
+            id: (obj as any).id,
+            name: (obj as any).name || `${obj.type} ${index + 1}`,
+            type: obj.type || 'object',
+            visible: obj.visible !== false,
+            locked: !obj.selectable,
+            opacity: obj.opacity || 1,
+            artboardId: (obj as any).artboardId,
+            zIndex: index
+          };
+        });
+      
+      setLayers(layerInfos);
+      updateTimeoutRef.current = null;
+    }, 50); // 50ms debounce
   }, [canvas]);
 
   const getObjectById = useCallback((id: string): FabricObject | null => {
@@ -143,6 +168,9 @@ export const useLayerSystem = (canvas: Canvas | null) => {
         left: (cloned.left || 0) + 20,
         top: (cloned.top || 0) + 20
       });
+      
+      // Generate new ID for cloned object
+      (cloned as any).id = `layer-${Date.now()}-cloned`;
       
       // Preserve artboard assignment
       if ((obj as any).artboardId) {

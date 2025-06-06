@@ -1,10 +1,27 @@
-import { useCallback } from 'react';
+
+import { useCallback, useRef } from 'react';
 import { Canvas, FabricObject, Point } from 'fabric';
 import { Artboard } from '@/utils/projectState';
 import { calculateRepulsionForce } from '@/utils/artboardUtils';
 import { toast } from 'sonner';
 
 export const useArtboardSystem = (canvas: Canvas | null) => {
+  const animationFramesRef = useRef<Map<string, number>>(new Map());
+  const debounceTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+
+  // Cleanup function for animations and timers
+  const cleanup = useCallback(() => {
+    animationFramesRef.current.forEach(frameId => {
+      cancelAnimationFrame(frameId);
+    });
+    animationFramesRef.current.clear();
+
+    debounceTimersRef.current.forEach(timerId => {
+      clearTimeout(timerId);
+    });
+    debounceTimersRef.current.clear();
+  }, []);
+
   // Sincroniza o label da prancheta com sua posição
   const syncArtboardLabel = useCallback((artboardRect: FabricObject, artboard: Artboard) => {
     if (!canvas) return;
@@ -24,25 +41,42 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
     }
   }, [canvas]);
 
-  // Aplica repulsão entre pranchetas
+  // Aplica repulsão entre pranchetas com otimização
   const applyArtboardRepulsion = useCallback((movingArtboard: Artboard, allArtboards: Artboard[]) => {
     if (!canvas) return movingArtboard;
 
     let newX = movingArtboard.x;
     let newY = movingArtboard.y;
+    let totalForceX = 0;
+    let totalForceY = 0;
     
-    allArtboards.forEach(staticArtboard => {
-      if (staticArtboard.id === movingArtboard.id) return;
+    // Limitar verificações apenas para artboards próximos
+    const nearbyArtboards = allArtboards.filter(staticArtboard => {
+      if (staticArtboard.id === movingArtboard.id) return false;
       
+      const distance = Math.sqrt(
+        Math.pow(movingArtboard.x - staticArtboard.x, 2) + 
+        Math.pow(movingArtboard.y - staticArtboard.y, 2)
+      );
+      
+      return distance < 300; // Só verificar artboards próximos
+    });
+
+    nearbyArtboards.forEach(staticArtboard => {
       const repulsion = calculateRepulsionForce(
         { ...movingArtboard, x: newX, y: newY }, 
         staticArtboard, 
-        150 // Distância de repulsão
+        120 // Reduzir distância de repulsão para performance
       );
       
-      newX += repulsion.x;
-      newY += repulsion.y;
+      totalForceX += repulsion.x;
+      totalForceY += repulsion.y;
     });
+
+    // Aplicar força com damping para evitar oscilações
+    const damping = 0.8;
+    newX += totalForceX * damping;
+    newY += totalForceY * damping;
 
     return { ...movingArtboard, x: newX, y: newY };
   }, [canvas]);
@@ -66,38 +100,56 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
     }) || null;
   }, []);
 
-  // Atualiza a associação de elementos com pranchetas
+  // Atualiza a associação de elementos com pranchetas (debounced)
   const updateElementArtboardAssociation = useCallback((element: FabricObject, artboards: Artboard[]) => {
-    const containingArtboard = getElementArtboard(element, artboards);
-    const currentArtboardId = (element as any).artboardId;
+    const elementId = (element as any).id || 'unknown';
     
-    if (containingArtboard?.id !== currentArtboardId) {
-      (element as any).artboardId = containingArtboard?.id || null;
+    // Clear existing timer
+    const existingTimer = debounceTimersRef.current.get(elementId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    // Set new debounced timer
+    const timer = setTimeout(() => {
+      const containingArtboard = getElementArtboard(element, artboards);
+      const currentArtboardId = (element as any).artboardId;
       
-      if (containingArtboard) {
-        toast(`Elemento movido para prancheta "${containingArtboard.name}"`);
-      } else if (currentArtboardId) {
-        toast("Elemento removido da prancheta");
+      if (containingArtboard?.id !== currentArtboardId) {
+        (element as any).artboardId = containingArtboard?.id || null;
+        
+        if (containingArtboard) {
+          toast(`Elemento movido para prancheta "${containingArtboard.name}"`);
+        } else if (currentArtboardId) {
+          toast("Elemento removido da prancheta");
+        }
       }
       
-      return true; // Indica que houve mudança
-    }
-    
-    return false;
+      debounceTimersRef.current.delete(elementId);
+    }, 150); // Debounce de 150ms
+
+    debounceTimersRef.current.set(elementId, timer);
+    return false; // Sempre retorna false pois a atualização é async
   }, [getElementArtboard]);
 
   // Configura eventos de movimento para pranchetas
   const setupArtboardMovement = useCallback((artboardRect: FabricObject, artboard: Artboard, allArtboards: Artboard[], updateArtboards: (updater: (prev: Artboard[]) => Artboard[]) => void) => {
     if (!canvas) return;
 
+    const artboardId = artboard.id;
     let isMoving = false;
-    let animationFrame: number;
 
     const onMoving = () => {
       if (isMoving) return;
       isMoving = true;
       
-      animationFrame = requestAnimationFrame(() => {
+      // Cancel previous animation frame
+      const existingFrame = animationFramesRef.current.get(artboardId);
+      if (existingFrame) {
+        cancelAnimationFrame(existingFrame);
+      }
+
+      const frameId = requestAnimationFrame(() => {
         const updatedArtboard = {
           ...artboard,
           x: artboardRect.left || 0,
@@ -107,13 +159,20 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
         // Aplica repulsão
         const repulsedArtboard = applyArtboardRepulsion(updatedArtboard, allArtboards);
         
-        // Atualiza posição com repulsão suave
-        if (repulsedArtboard.x !== updatedArtboard.x || repulsedArtboard.y !== updatedArtboard.y) {
-          // Fixed animation call for Fabric.js v6 - animate both properties together
-          artboardRect.animate({
-            left: repulsedArtboard.x,
-            top: repulsedArtboard.y
-          }, {
+        // Atualiza posição com repulsão suave apenas se necessário
+        const hasRepulsion = repulsedArtboard.x !== updatedArtboard.x || repulsedArtboard.y !== updatedArtboard.y;
+        
+        if (hasRepulsion) {
+          // Fixed animation call for Fabric.js v6 - using object format
+          artboardRect.animate('left', repulsedArtboard.x, {
+            duration: 200,
+            onChange: () => {
+              syncArtboardLabel(artboardRect, repulsedArtboard);
+              canvas?.renderAll();
+            }
+          });
+          
+          artboardRect.animate('top', repulsedArtboard.y, {
             duration: 200,
             onChange: () => {
               syncArtboardLabel(artboardRect, repulsedArtboard);
@@ -130,7 +189,10 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
         ));
         
         isMoving = false;
+        animationFramesRef.current.delete(artboardId);
       });
+
+      animationFramesRef.current.set(artboardId, frameId);
     };
 
     const onModified = () => {
@@ -148,8 +210,12 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
     return () => {
       artboardRect.off('moving', onMoving);
       artboardRect.off('modified', onModified);
-      if (animationFrame) {
-        cancelAnimationFrame(animationFrame);
+      
+      // Cleanup animation frames and timers for this artboard
+      const frameId = animationFramesRef.current.get(artboardId);
+      if (frameId) {
+        cancelAnimationFrame(frameId);
+        animationFramesRef.current.delete(artboardId);
       }
     };
   }, [canvas, syncArtboardLabel, applyArtboardRepulsion]);
@@ -166,6 +232,14 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
 
     return () => {
       element.off('modified', onModified);
+      
+      // Cleanup debounce timer for this element
+      const elementId = (element as any).id || 'unknown';
+      const timer = debounceTimersRef.current.get(elementId);
+      if (timer) {
+        clearTimeout(timer);
+        debounceTimersRef.current.delete(elementId);
+      }
     };
   }, [canvas, updateElementArtboardAssociation]);
 
@@ -175,6 +249,7 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
     getElementArtboard,
     updateElementArtboardAssociation,
     setupArtboardMovement,
-    setupElementMovement
+    setupElementMovement,
+    cleanup
   };
 };

@@ -94,15 +94,30 @@ export const useArtboardCreator = () => {
       setArtboards
     );
 
-    // Adiciona animação de entrada suave
+    // Adiciona animação de entrada suave - Fixed for Fabric.js v6
     artboardRect.set({ opacity: 0, scaleX: 0.8, scaleY: 0.8 });
     artboardLabel.set({ opacity: 0 });
     
-    // Fixed animation calls for Fabric.js v6 - using correct syntax
-    artboardRect.animate({ opacity: 1, duration: 300 });
-    artboardRect.animate({ scaleX: 1, duration: 300 });
-    artboardRect.animate({ scaleY: 1, duration: 300 });
-    artboardLabel.animate({ opacity: 1, duration: 300 });
+    // Fixed animation calls for Fabric.js v6 - using correct object format
+    artboardRect.animate('opacity', 1, {
+      duration: 300,
+      onChange: () => fabricCanvas.renderAll()
+    });
+    
+    artboardRect.animate('scaleX', 1, {
+      duration: 300,
+      onChange: () => fabricCanvas.renderAll()
+    });
+    
+    artboardRect.animate('scaleY', 1, {
+      duration: 300,
+      onChange: () => fabricCanvas.renderAll()
+    });
+    
+    artboardLabel.animate('opacity', 1, {
+      duration: 300,
+      onChange: () => fabricCanvas.renderAll()
+    });
 
     fabricCanvas.renderAll();
     setArtboards(prev => [...prev, repulsedArtboard]);
