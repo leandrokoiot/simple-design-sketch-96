@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, Point, Group, FabricImage } from "fabric";
 import { MinimalSidebar } from "./MinimalSidebar";
@@ -124,14 +123,15 @@ export const CanvasEditor = () => {
     });
   }, [snapToGrid, gridSize]);
 
-  // Zoom functionality
+  // Zoom functionality - FIXED
   const handleZoomChange = useCallback((newZoom: number) => {
     if (!fabricCanvas) return;
     
     const zoomLevel = newZoom / 100;
     setZoom(newZoom);
     
-    fabricCanvas.setZoom(zoomLevel);
+    const center = fabricCanvas.getCenter();
+    fabricCanvas.zoomToPoint(new Point(center.left, center.top), zoomLevel);
     fabricCanvas.renderAll();
     
     console.log(`Zoom changed to ${newZoom}%`);
@@ -153,16 +153,46 @@ export const CanvasEditor = () => {
     handleZoomChange(Math.max(25, Math.min(300, newZoom)));
   }, [fabricCanvas, handleZoomChange]);
 
-  // Artboard functionality
+  // Find next available position for artboard to avoid overlap
+  const findNextArtboardPosition = useCallback(() => {
+    if (artboards.length === 0) {
+      return { x: 100, y: 100 };
+    }
+
+    // Find the rightmost artboard
+    let maxRight = 0;
+    let currentRowY = 100;
+    
+    artboards.forEach(artboard => {
+      const right = artboard.x + artboard.width;
+      if (right > maxRight) {
+        maxRight = right;
+        currentRowY = artboard.y;
+      }
+    });
+
+    // Place new artboard to the right with some spacing
+    return { x: maxRight + 50, y: currentRowY };
+  }, [artboards]);
+
+  // Artboard functionality - IMPROVED
   const createArtboard = useCallback((artboardData: Omit<Artboard, 'id'>) => {
     if (!fabricCanvas) return;
 
     // Deactivate other artboards
     setArtboards(prev => prev.map(ab => ({ ...ab, isActive: false })));
 
+    // Find position to avoid overlap
+    const position = findNextArtboardPosition();
+
     const newArtboard: Artboard = {
       ...artboardData,
-      id: `artboard_${Date.now()}`
+      id: `artboard_${Date.now()}`,
+      x: position.x,
+      y: position.y,
+      // Ensure reasonable size limits
+      width: Math.min(artboardData.width, 1200),
+      height: Math.min(artboardData.height, 800)
     };
 
     // Create visual artboard on canvas
@@ -171,18 +201,48 @@ export const CanvasEditor = () => {
       top: newArtboard.y,
       width: newArtboard.width,
       height: newArtboard.height,
-      fill: 'rgba(255, 255, 255, 0.9)',
+      fill: 'rgba(255, 255, 255, 0.95)',
       stroke: '#3b82f6',
       strokeWidth: 2,
+      strokeDashArray: [5, 5],
+      selectable: false,
+      evented: false,
+      rx: 8,
+      ry: 8,
+    });
+
+    // Add artboard label
+    const artboardLabel = new FabricText(newArtboard.name, {
+      left: newArtboard.x + 10,
+      top: newArtboard.y - 25,
+      fontSize: 14,
+      fontFamily: 'Inter, sans-serif',
+      fill: '#3b82f6',
       selectable: false,
       evented: false,
     });
 
     (artboardRect as any).isArtboard = true;
     (artboardRect as any).artboardId = newArtboard.id;
+    (artboardLabel as any).isArtboard = true;
+    (artboardLabel as any).artboardId = newArtboard.id;
 
     fabricCanvas.add(artboardRect);
+    fabricCanvas.add(artboardLabel);
     fabricCanvas.sendObjectToBack(artboardRect);
+    fabricCanvas.sendObjectToBack(artboardLabel);
+
+    // Auto-adjust canvas size if needed
+    const requiredWidth = newArtboard.x + newArtboard.width + 100;
+    const requiredHeight = newArtboard.y + newArtboard.height + 100;
+    
+    if (requiredWidth > fabricCanvas.width! || requiredHeight > fabricCanvas.height!) {
+      fabricCanvas.setDimensions({
+        width: Math.max(fabricCanvas.width!, requiredWidth),
+        height: Math.max(fabricCanvas.height!, requiredHeight)
+      });
+    }
+
     fabricCanvas.renderAll();
 
     setArtboards(prev => [...prev, newArtboard]);
@@ -191,7 +251,8 @@ export const CanvasEditor = () => {
     createNewVersion(`Created artboard: ${newArtboard.name}`, fabricCanvas.toJSON(), zoom, [...artboards, newArtboard]);
     
     console.log(`Artboard created: ${newArtboard.name}`);
-  }, [fabricCanvas, zoom, artboards, createNewVersion]);
+    toast(`Artboard "${newArtboard.name}" created!`);
+  }, [fabricCanvas, zoom, artboards, createNewVersion, findNextArtboardPosition]);
 
   // Initialize canvas only once
   useEffect(() => {
@@ -207,7 +268,7 @@ export const CanvasEditor = () => {
     canvas.selection = true;
     canvas.preserveObjectStacking = true;
 
-    // Mouse wheel zoom
+    // Mouse wheel zoom - FIXED
     canvas.on('mouse:wheel', (opt) => {
       const delta = opt.e.deltaY;
       let newZoom = zoom;
@@ -219,7 +280,10 @@ export const CanvasEditor = () => {
       }
       
       if (newZoom !== zoom) {
-        handleZoomChange(newZoom);
+        const pointer = canvas.getPointer(opt.e);
+        const zoomLevel = newZoom / 100;
+        canvas.zoomToPoint(new Point(pointer.x, pointer.y), zoomLevel);
+        setZoom(newZoom);
       }
       
       opt.e.preventDefault();
@@ -532,7 +596,7 @@ export const CanvasEditor = () => {
       {/* Debug Panel */}
       <DebugPanel canvasState={fabricCanvas} zoom={zoom} artboards={artboards} />
 
-      {/* Zoom Controls */}
+      {/* Zoom Controls - Fixed positioning */}
       <div className="fixed bottom-6 right-6 z-40">
         <ZoomControls
           zoom={zoom}

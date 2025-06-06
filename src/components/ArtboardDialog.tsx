@@ -17,8 +17,8 @@ export const ArtboardDialog = ({ onCreateArtboard }: ArtboardDialogProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState('');
   const [selectedPreset, setSelectedPreset] = useState('');
-  const [customWidth, setCustomWidth] = useState(800);
-  const [customHeight, setCustomHeight] = useState(600);
+  const [customWidth, setCustomWidth] = useState(400);
+  const [customHeight, setCustomHeight] = useState(300);
 
   const handleCreate = () => {
     if (!name.trim()) {
@@ -32,10 +32,15 @@ export const ArtboardDialog = ({ onCreateArtboard }: ArtboardDialogProps) => {
     if (selectedPreset && selectedPreset !== 'Custom') {
       const preset = artboardPresets.find(p => p.name === selectedPreset);
       if (preset) {
-        width = preset.width;
-        height = preset.height;
+        // Scale down large presets to reasonable canvas sizes
+        width = preset.width > 800 ? Math.round(preset.width * 0.3) : preset.width;
+        height = preset.height > 600 ? Math.round(preset.height * 0.3) : preset.height;
       }
     }
+
+    // Ensure reasonable limits
+    width = Math.max(100, Math.min(width, 800));
+    height = Math.max(100, Math.min(height, 600));
 
     const artboard: Omit<Artboard, 'id'> = {
       name: name.trim(),
@@ -52,8 +57,8 @@ export const ArtboardDialog = ({ onCreateArtboard }: ArtboardDialogProps) => {
     // Reset form
     setName('');
     setSelectedPreset('');
-    setCustomWidth(800);
-    setCustomHeight(600);
+    setCustomWidth(400);
+    setCustomHeight(300);
     setIsOpen(false);
   };
 
@@ -61,8 +66,11 @@ export const ArtboardDialog = ({ onCreateArtboard }: ArtboardDialogProps) => {
     setSelectedPreset(presetName);
     const preset = artboardPresets.find(p => p.name === presetName);
     if (preset && presetName !== 'Custom') {
-      setCustomWidth(preset.width);
-      setCustomHeight(preset.height);
+      // Scale down for better canvas display
+      const scaledWidth = preset.width > 800 ? Math.round(preset.width * 0.3) : preset.width;
+      const scaledHeight = preset.height > 600 ? Math.round(preset.height * 0.3) : preset.height;
+      setCustomWidth(scaledWidth);
+      setCustomHeight(scaledHeight);
     }
   };
 
@@ -109,6 +117,7 @@ export const ArtboardDialog = ({ onCreateArtboard }: ArtboardDialogProps) => {
                 {artboardPresets.map((preset) => (
                   <SelectItem key={preset.name} value={preset.name}>
                     {preset.name} ({preset.width} × {preset.height})
+                    {preset.width > 800 || preset.height > 600 ? ' - Scaled' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -122,9 +131,9 @@ export const ArtboardDialog = ({ onCreateArtboard }: ArtboardDialogProps) => {
                 id="width"
                 type="number"
                 value={customWidth}
-                onChange={(e) => setCustomWidth(Number(e.target.value))}
+                onChange={(e) => setCustomWidth(Math.min(800, Math.max(100, Number(e.target.value))))}
                 min={100}
-                max={10000}
+                max={800}
                 className="mt-1"
               />
             </div>
@@ -134,12 +143,17 @@ export const ArtboardDialog = ({ onCreateArtboard }: ArtboardDialogProps) => {
                 id="height"
                 type="number"
                 value={customHeight}
-                onChange={(e) => setCustomHeight(Number(e.target.value))}
+                onChange={(e) => setCustomHeight(Math.min(600, Math.max(100, Number(e.target.value))))}
                 min={100}
-                max={10000}
+                max={600}
                 className="mt-1"
               />
             </div>
+          </div>
+
+          <div className="text-sm text-muted-foreground">
+            <p>📏 Sizes are optimized for canvas display</p>
+            <p>🎯 Large presets are automatically scaled down</p>
           </div>
 
           <div className="flex gap-2 pt-4">
