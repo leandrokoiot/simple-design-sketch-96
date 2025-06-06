@@ -1,56 +1,53 @@
 
 import { useCallback, useState } from 'react';
 import { Artboard } from '@/utils/projectState';
-import { FabricObject } from 'fabric';
 import { toast } from 'sonner';
 
-interface ArtboardClipboardData {
+interface ClipboardData {
   artboard: Omit<Artboard, 'id'>;
-  elements: any[]; // Serialized fabric objects
+  elements: any[];
   timestamp: number;
 }
 
 export const useArtboardClipboard = () => {
-  const [clipboard, setClipboard] = useState<ArtboardClipboardData | null>(null);
+  const [clipboard, setClipboard] = useState<ClipboardData | null>(null);
 
-  const copyArtboard = useCallback(async (
-    artboard: Artboard, 
-    fabricCanvas?: any
-  ) => {
+  const copyArtboard = useCallback(async (artboard: Artboard, fabricCanvas?: any) => {
     try {
       let elements: any[] = [];
       
       if (fabricCanvas) {
-        // Get all elements in this artboard
         const artboardElements = fabricCanvas.getObjects().filter((obj: any) => 
           obj.artboardId === artboard.id && !obj.isArtboard && !obj.isGridLine
         );
         
-        // Serialize elements for copying
-        elements = await Promise.all(
-          artboardElements.map(async (obj: FabricObject) => {
-            return obj.toObject(['id', 'artboardId']);
-          })
-        );
+        elements = artboardElements.map((obj: any) => {
+          const serialized = obj.toObject(['id', 'artboardId']);
+          return {
+            ...serialized,
+            originalLeft: obj.left,
+            originalTop: obj.top
+          };
+        });
       }
 
-      const clipboardData: ArtboardClipboardData = {
+      const clipboardData: ClipboardData = {
         artboard: {
-          name: `${artboard.name} Copy`,
+          name: artboard.name,
           width: artboard.width,
           height: artboard.height,
           x: artboard.x,
           y: artboard.y,
           backgroundColor: artboard.backgroundColor,
           isActive: false,
-          elementIds: artboard.elementIds
+          elementIds: []
         },
         elements,
         timestamp: Date.now()
       };
 
       setClipboard(clipboardData);
-      toast.success(`Prancheta "${artboard.name}" copiada para área de transferência`);
+      toast.success(`Prancheta copiada`);
       
     } catch (error) {
       console.error('Failed to copy artboard:', error);
@@ -61,64 +58,70 @@ export const useArtboardClipboard = () => {
   const pasteArtboard = useCallback(async (
     onCreateArtboard: (artboard: Omit<Artboard, 'id'>) => void,
     fabricCanvas?: any,
-    position?: { x: number; y: number }
+    findOptimalPosition?: (width: number, height: number) => { x: number; y: number }
   ) => {
     if (!clipboard) {
-      toast.error('Nenhuma prancheta na área de transferência');
+      toast.error('Nenhuma prancheta copiada');
       return;
     }
 
     try {
-      // Create new artboard with offset position
+      const position = findOptimalPosition 
+        ? findOptimalPosition(clipboard.artboard.width, clipboard.artboard.height)
+        : { x: clipboard.artboard.x + 50, y: clipboard.artboard.y + 50 };
+
       const newArtboard = {
         ...clipboard.artboard,
-        x: position?.x || clipboard.artboard.x + 50,
-        y: position?.y || clipboard.artboard.y + 50,
+        x: position.x,
+        y: position.y,
         isActive: true
       };
 
       onCreateArtboard(newArtboard);
 
-      // If we have a canvas and elements, restore them
       if (fabricCanvas && clipboard.elements.length > 0) {
-        // Wait a bit for artboard to be created
         setTimeout(async () => {
-          try {
-            const newArtboardId = `artboard_${Date.now()}`;
-            
-            for (const elementData of clipboard.elements) {
-              // Create new fabric object from serialized data
+          const offsetX = position.x - clipboard.artboard.x;
+          const offsetY = position.y - clipboard.artboard.y;
+          
+          const newArtboardId = `artboard_${Date.now()}`;
+          
+          for (const elementData of clipboard.elements) {
+            try {
               const fabricClass = (window as any).fabric[elementData.type];
-              if (fabricClass) {
-                const newElement = await fabricClass.fromObject(elementData);
-                
-                // Update position relative to new artboard
-                const offsetX = newArtboard.x - clipboard.artboard.x;
-                const offsetY = newArtboard.y - clipboard.artboard.y;
-                
-                newElement.set({
-                  left: (newElement.left || 0) + offsetX,
-                  top: (newElement.top || 0) + offsetY,
-                  id: `element_${Date.now()}_${Math.random()}`,
-                  artboardId: newArtboardId
+              if (fabricClass && fabricClass.fromObject) {
+                const newElement = await new Promise((resolve, reject) => {
+                  fabricClass.fromObject(elementData, (obj: any) => {
+                    if (obj) {
+                      resolve(obj);
+                    } else {
+                      reject(new Error('Failed to create object'));
+                    }
+                  });
                 });
 
-                fabricCanvas.add(newElement);
+                if (newElement) {
+                  (newElement as any).set({
+                    left: (elementData.originalLeft || 0) + offsetX,
+                    top: (elementData.originalTop || 0) + offsetY,
+                    id: `element_${Date.now()}_${Math.random()}`,
+                    artboardId: newArtboardId
+                  });
+
+                  fabricCanvas.add(newElement);
+                }
               }
+            } catch (error) {
+              console.error('Failed to create element:', error);
             }
-            
-            fabricCanvas.renderAll();
-            toast.success('Prancheta e elementos colados com sucesso');
-            
-          } catch (error) {
-            console.error('Failed to paste elements:', error);
-            toast.warning('Prancheta colada, mas alguns elementos podem não ter sido restaurados');
           }
-        }, 100);
-      } else {
-        toast.success('Prancheta colada com sucesso');
+          
+          fabricCanvas.renderAll();
+        }, 200);
       }
 
+      toast.success('Prancheta colada');
+      
     } catch (error) {
       console.error('Failed to paste artboard:', error);
       toast.error('Erro ao colar prancheta');
@@ -128,10 +131,11 @@ export const useArtboardClipboard = () => {
   const duplicateArtboard = useCallback(async (
     artboard: Artboard,
     onCreateArtboard: (artboard: Omit<Artboard, 'id'>) => void,
-    fabricCanvas?: any
+    fabricCanvas?: any,
+    findOptimalPosition?: (width: number, height: number) => { x: number; y: number }
   ) => {
     await copyArtboard(artboard, fabricCanvas);
-    await pasteArtboard(onCreateArtboard, fabricCanvas);
+    await pasteArtboard(onCreateArtboard, fabricCanvas, findOptimalPosition);
   }, [copyArtboard, pasteArtboard]);
 
   const clearClipboard = useCallback(() => {
@@ -139,16 +143,12 @@ export const useArtboardClipboard = () => {
     toast.info('Área de transferência limpa');
   }, []);
 
-  const hasClipboard = Boolean(clipboard);
-  const clipboardAge = clipboard ? Date.now() - clipboard.timestamp : 0;
-
   return {
     copyArtboard,
     pasteArtboard,
     duplicateArtboard,
     clearClipboard,
-    hasClipboard,
-    clipboardAge,
+    hasClipboard: Boolean(clipboard),
     clipboardData: clipboard
   };
 };

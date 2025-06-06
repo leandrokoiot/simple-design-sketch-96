@@ -1,7 +1,6 @@
 
 import React, { createContext, useContext, useCallback, useState } from 'react';
 import { Artboard } from '@/utils/projectState';
-import { getArtboardById } from '@/utils/artboardUtils';
 import { toast } from 'sonner';
 
 interface ArtboardContextType {
@@ -11,7 +10,6 @@ interface ArtboardContextType {
   setSelectedArtboard: (artboard: Artboard | null) => void;
   handleUpdateArtboard: (id: string, updates: Partial<Artboard>) => void;
   handleDeleteArtboard: (id: string, fabricCanvas?: any) => void;
-  findNextArtboardPosition: () => { x: number; y: number };
   findOptimalPosition: (width: number, height: number) => { x: number; y: number };
 }
 
@@ -38,7 +36,6 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
       ab.id === id ? { ...ab, ...updates } : ab
     ));
     
-    // Update selected artboard if it's the one being updated
     if (selectedArtboard?.id === id) {
       setSelectedArtboard(prev => prev ? { ...prev, ...updates } : null);
     }
@@ -46,7 +43,6 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
 
   const handleDeleteArtboard = useCallback((id: string, fabricCanvas?: any) => {
     if (fabricCanvas) {
-      // Remove artboard elements from canvas
       const artboardElements = fabricCanvas.getObjects().filter((obj: any) => 
         obj.artboardId === id
       );
@@ -61,55 +57,18 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
     toast.success("Prancheta excluída!");
   }, []);
 
-  const findNextArtboardPosition = useCallback(() => {
-    if (artboards.length === 0) {
-      return { x: 100, y: 100 };
-    }
-
-    const buffer = 80;
-    let attempts = 0;
-    const maxAttempts = 100;
-    
-    while (attempts < maxAttempts) {
-      const x = 100 + (attempts % 4) * 350;
-      const y = 100 + Math.floor(attempts / 4) * 250;
-      
-      let collision = false;
-      for (const artboard of artboards) {
-        const distance = Math.sqrt(Math.pow(x - artboard.x, 2) + Math.pow(y - artboard.y, 2));
-        if (distance < buffer) {
-          collision = true;
-          break;
-        }
-      }
-      
-      if (!collision) {
-        return { x, y };
-      }
-      
-      attempts++;
-    }
-    
-    // Fallback: place far to the right
-    const maxRight = Math.max(...artboards.map(ab => ab.x + ab.width));
-    return { x: maxRight + buffer, y: 100 };
-  }, [artboards]);
-
   const findOptimalPosition = useCallback((width: number, height: number) => {
     if (artboards.length === 0) {
       return { x: 100, y: 100 };
     }
 
     const buffer = 50;
-    const gridSize = 50;
     
-    // Try positions in a grid pattern
     for (let row = 0; row < 10; row++) {
       for (let col = 0; col < 10; col++) {
         const x = 100 + col * (width + buffer);
         const y = 100 + row * (height + buffer);
         
-        // Check if this position overlaps with any existing artboard
         const overlaps = artboards.some(artboard => {
           return !(
             x + width < artboard.x ||
@@ -125,7 +84,6 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
       }
     }
     
-    // Fallback: place to the right of all artboards
     const maxRight = Math.max(...artboards.map(ab => ab.x + ab.width));
     return { x: maxRight + buffer, y: 100 };
   }, [artboards]);
@@ -137,7 +95,6 @@ export const ArtboardProvider = ({ children }: ArtboardProviderProps) => {
     setSelectedArtboard,
     handleUpdateArtboard,
     handleDeleteArtboard,
-    findNextArtboardPosition,
     findOptimalPosition,
   };
 

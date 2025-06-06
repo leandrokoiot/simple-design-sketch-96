@@ -1,4 +1,3 @@
-
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +9,6 @@ import {
   Copy, 
   Trash2, 
   ZoomIn,
-  Download,
   Lock,
   Unlock,
   FileImage,
@@ -27,6 +25,7 @@ import { Artboard } from "@/utils/projectState";
 import { FabricObject } from "fabric";
 import { useArtboardExport } from "@/hooks/useArtboardExport";
 import { useArtboardClipboard } from "@/hooks/useArtboardClipboard";
+import { useArtboards } from "@/contexts/ArtboardContext";
 import { 
   defaultArtboardTemplates, 
   getTemplatesByCategory, 
@@ -72,12 +71,12 @@ export const ArtboardManager = ({
   const [selectedCategory, setSelectedCategory] = useState("Popular");
   
   const { exportArtboard } = useArtboardExport();
+  const { findOptimalPosition } = useArtboards();
   const { 
     copyArtboard, 
     pasteArtboard, 
     duplicateArtboard,
-    hasClipboard,
-    clearClipboard 
+    hasClipboard
   } = useArtboardClipboard();
 
   // Calculate elements in selected artboard
@@ -160,12 +159,12 @@ export const ArtboardManager = ({
 
   const handlePasteArtboard = async () => {
     if (!onCreateArtboard) return;
-    await pasteArtboard(onCreateArtboard, fabricCanvas);
+    await pasteArtboard(onCreateArtboard, fabricCanvas, findOptimalPosition);
   };
 
   const handleDuplicateArtboard = async () => {
     if (!selectedArtboard || !onCreateArtboard) return;
-    await duplicateArtboard(selectedArtboard, onCreateArtboard, fabricCanvas);
+    await duplicateArtboard(selectedArtboard, onCreateArtboard, fabricCanvas, findOptimalPosition);
   };
 
   if (!selectedArtboard) {
