@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, Point, Group, FabricImage } from "fabric";
 import { MinimalSidebar } from "./MinimalSidebar";
@@ -32,6 +33,44 @@ export const CanvasEditor = () => {
     const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine && !(obj as any).isArtboard);
     setCanvasObjects(objects);
     console.log(`Objects updated: ${objects.length} objects`);
+  }, [fabricCanvas]);
+
+  // Copy/Paste/Delete handlers
+  const handleCopy = useCallback(() => {
+    if (!fabricCanvas) return;
+    const activeObject = fabricCanvas.getActiveObject();
+    if (activeObject) {
+      activeObject.clone().then((cloned: FabricObject) => {
+        setClipboard(cloned);
+        toast("Object copied!");
+      });
+    }
+  }, [fabricCanvas]);
+
+  const handlePaste = useCallback(() => {
+    if (!fabricCanvas || !clipboard) return;
+    
+    clipboard.clone().then((cloned: FabricObject) => {
+      cloned.set({
+        left: (cloned.left || 0) + 20,
+        top: (cloned.top || 0) + 20,
+      });
+      fabricCanvas.add(cloned);
+      fabricCanvas.setActiveObject(cloned);
+      fabricCanvas.renderAll();
+      toast("Object pasted!");
+    });
+  }, [fabricCanvas, clipboard]);
+
+  const handleDelete = useCallback(() => {
+    if (!fabricCanvas) return;
+    const activeObjects = fabricCanvas.getActiveObjects();
+    if (activeObjects.length > 0) {
+      activeObjects.forEach(obj => fabricCanvas.remove(obj));
+      fabricCanvas.discardActiveObject();
+      fabricCanvas.renderAll();
+      toast(`Deleted ${activeObjects.length} object(s)`);
+    }
   }, [fabricCanvas]);
 
   // Draw grid on canvas
