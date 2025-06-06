@@ -164,7 +164,7 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
         
         if (hasRepulsion) {
           // Fixed animation call for Fabric.js v6 - using object format
-          artboardRect.animate('left', repulsedArtboard.x, {
+          artboardRect.animate({ left: repulsedArtboard.x }, {
             duration: 200,
             onChange: () => {
               syncArtboardLabel(artboardRect, repulsedArtboard);
@@ -172,7 +172,7 @@ export const useArtboardSystem = (canvas: Canvas | null) => {
             }
           });
           
-          artboardRect.animate('top', repulsedArtboard.y, {
+          artboardRect.animate({ top: repulsedArtboard.y }, {
             duration: 200,
             onChange: () => {
               syncArtboardLabel(artboardRect, repulsedArtboard);
