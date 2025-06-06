@@ -1,15 +1,71 @@
 
-import { useEffect, useRef, useState } from "react";
-import { Canvas as FabricCanvas, Circle, Rect, FabricText } from "fabric";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject } from "fabric";
 import { Toolbar } from "./Toolbar";
 import { ZoomControls } from "./ZoomControls";
+import { PropertiesPanel } from "./PropertiesPanel";
 import { toast } from "sonner";
 
 export const CanvasEditor = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
-  const [activeTool, setActiveTool] = useState<"select" | "rectangle" | "circle" | "text">("select");
+  const [activeTool, setActiveTool] = useState<"select" | "rectangle" | "circle" | "text" | "line">("select");
   const [zoom, setZoom] = useState(100);
+  const [selectedObject, setSelectedObject] = useState<FabricObject | null>(null);
+  const [showGrid, setShowGrid] = useState(true);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const gridSize = 20;
+
+  // Draw grid on canvas
+  const drawGrid = useCallback((canvas: FabricCanvas) => {
+    if (!showGrid) return;
+
+    const canvasWidth = canvas.width || 1200;
+    const canvasHeight = canvas.height || 800;
+    
+    // Clear existing grid
+    const existingGrid = canvas.getObjects().filter(obj => obj.name === 'grid-line');
+    existingGrid.forEach(line => canvas.remove(line));
+
+    // Draw vertical lines
+    for (let i = 0; i <= canvasWidth; i += gridSize) {
+      const line = new Line([i, 0, i, canvasHeight], {
+        stroke: '#e5e7eb',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        name: 'grid-line'
+      });
+      canvas.add(line);
+      canvas.sendToBack(line);
+    }
+
+    // Draw horizontal lines
+    for (let i = 0; i <= canvasHeight; i += gridSize) {
+      const line = new Line([0, i, canvasWidth, i], {
+        stroke: '#e5e7eb',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        name: 'grid-line'
+      });
+      canvas.add(line);
+      canvas.sendToBack(line);
+    }
+  }, [showGrid, gridSize]);
+
+  // Snap object to grid
+  const snapToGridFn = useCallback((obj: FabricObject) => {
+    if (!snapToGrid) return;
+    
+    const snappedLeft = Math.round((obj.left || 0) / gridSize) * gridSize;
+    const snappedTop = Math.round((obj.top || 0) / gridSize) * gridSize;
+    
+    obj.set({
+      left: snappedLeft,
+      top: snappedTop
+    });
+  }, [snapToGrid, gridSize]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -20,13 +76,83 @@ export const CanvasEditor = () => {
       backgroundColor: "#ffffff",
     });
 
-    // Set up canvas properties for smooth interactions
+    // Set up canvas properties
     canvas.selection = true;
     canvas.preserveObjectStacking = true;
 
-    setFabricCanvas(canvas);
+    // Mouse wheel zoom
+    canvas.on('mouse:wheel', (opt) => {
+      const delta = opt.e.deltaY;
+      let zoom = canvas.getZoom();
+      zoom *= 0.999 ** delta;
+      if (zoom > 3) zoom = 3;
+      if (zoom < 0.25) zoom = 0.25;
+      
+      canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+      setZoom(Math.round(zoom * 100));
+      opt.e.preventDefault();
+      opt.e.stopPropagation();
+    });
 
-    // Add some sample elements to start with
+    // Pan functionality
+    let isDragging = false;
+    let lastPosX = 0;
+    let lastPosY = 0;
+
+    canvas.on('mouse:down', (opt) => {
+      const evt = opt.e;
+      if (evt.altKey === true || evt.shiftKey === true) {
+        isDragging = true;
+        canvas.selection = false;
+        lastPosX = evt.clientX;
+        lastPosY = evt.clientY;
+      }
+    });
+
+    canvas.on('mouse:move', (opt) => {
+      if (isDragging) {
+        const e = opt.e;
+        const vpt = canvas.viewportTransform;
+        if (vpt) {
+          vpt[4] += e.clientX - lastPosX;
+          vpt[5] += e.clientY - lastPosY;
+          canvas.requestRenderAll();
+          lastPosX = e.clientX;
+          lastPosY = e.clientY;
+        }
+      }
+    });
+
+    canvas.on('mouse:up', () => {
+      canvas.setViewportTransform(canvas.viewportTransform);
+      isDragging = false;
+      canvas.selection = true;
+    });
+
+    // Object selection
+    canvas.on('selection:created', (e) => {
+      setSelectedObject(e.selected?.[0] || null);
+    });
+
+    canvas.on('selection:updated', (e) => {
+      setSelectedObject(e.selected?.[0] || null);
+    });
+
+    canvas.on('selection:cleared', () => {
+      setSelectedObject(null);
+    });
+
+    // Object moving with snap
+    canvas.on('object:moving', (e) => {
+      if (e.target) {
+        snapToGridFn(e.target);
+      }
+    });
+
+    setFabricCanvas(canvas);
+    drawGrid(canvas);
+
+    // Add some sample elements
     const welcomeText = new FabricText("Welcome to Design Editor", {
       left: 100,
       top: 100,
@@ -46,22 +172,68 @@ export const CanvasEditor = () => {
       ry: 8,
     });
 
-    const sampleCircle = new Circle({
-      left: 350,
-      top: 200,
-      radius: 60,
-      fill: "#06b6d4",
-    });
-
-    canvas.add(welcomeText, sampleRect, sampleCircle);
+    canvas.add(welcomeText, sampleRect);
     canvas.renderAll();
 
-    toast("Canvas ready! Start designing!");
+    toast("Canvas ready! Use Alt+drag to pan, Shift+drag to pan, mouse wheel to zoom");
+
+    // Keyboard shortcuts
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      switch (e.key) {
+        case 'Delete':
+        case 'Backspace':
+          handleDelete();
+          break;
+        case 'c':
+          if (e.ctrlKey || e.metaKey) {
+            handleCopy();
+          }
+          break;
+        case 'v':
+          if (e.ctrlKey || e.metaKey) {
+            handlePaste();
+          }
+          break;
+        case 'z':
+          if (e.ctrlKey || e.metaKey) {
+            if (e.shiftKey) {
+              // Redo (Ctrl+Shift+Z)
+              toast("Redo functionality coming soon!");
+            } else {
+              // Undo (Ctrl+Z)
+              toast("Undo functionality coming soon!");
+            }
+          }
+          break;
+        case 'g':
+          setShowGrid(!showGrid);
+          break;
+        case 's':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            toast("Save functionality coming soon!");
+          }
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      document.removeEventListener('keydown', handleKeyDown);
       canvas.dispose();
     };
-  }, []);
+  }, [drawGrid, snapToGridFn, showGrid]);
+
+  // Redraw grid when showGrid changes
+  useEffect(() => {
+    if (fabricCanvas) {
+      drawGrid(fabricCanvas);
+      fabricCanvas.renderAll();
+    }
+  }, [showGrid, drawGrid, fabricCanvas]);
 
   const handleToolClick = (tool: typeof activeTool) => {
     setActiveTool(tool);
@@ -102,6 +274,16 @@ export const CanvasEditor = () => {
       fabricCanvas.add(text);
       fabricCanvas.setActiveObject(text);
       fabricCanvas.renderAll();
+    } else if (tool === "line") {
+      const line = new Line([100, 100, 250, 200], {
+        stroke: `hsl(${Math.random() * 360}, 70%, 60%)`,
+        strokeWidth: 3,
+        left: Math.random() * 400 + 100,
+        top: Math.random() * 300 + 100,
+      });
+      fabricCanvas.add(line);
+      fabricCanvas.setActiveObject(line);
+      fabricCanvas.renderAll();
     }
   };
 
@@ -114,9 +296,22 @@ export const CanvasEditor = () => {
     setZoom(newZoom);
   };
 
+  const handleFitToScreen = () => {
+    if (!fabricCanvas) return;
+    
+    fabricCanvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    fabricCanvas.setZoom(1);
+    setZoom(100);
+    fabricCanvas.renderAll();
+    toast("Fit to screen!");
+  };
+
   const handleClear = () => {
     if (!fabricCanvas) return;
-    fabricCanvas.clear();
+    
+    // Remove all objects except grid lines
+    const objects = fabricCanvas.getObjects().filter(obj => obj.name !== 'grid-line');
+    objects.forEach(obj => fabricCanvas.remove(obj));
     fabricCanvas.backgroundColor = "#ffffff";
     fabricCanvas.renderAll();
     toast("Canvas cleared!");
@@ -125,11 +320,64 @@ export const CanvasEditor = () => {
   const handleDelete = () => {
     if (!fabricCanvas) return;
     const activeObject = fabricCanvas.getActiveObject();
-    if (activeObject) {
+    if (activeObject && activeObject.name !== 'grid-line') {
       fabricCanvas.remove(activeObject);
       fabricCanvas.renderAll();
+      setSelectedObject(null);
       toast("Object deleted!");
     }
+  };
+
+  const handleCopy = () => {
+    if (!fabricCanvas) return;
+    const activeObject = fabricCanvas.getActiveObject();
+    if (activeObject && activeObject.name !== 'grid-line') {
+      // Store in a simple way for now
+      (window as any).copiedObject = activeObject.toObject();
+      toast("Object copied! Press Ctrl+V to paste");
+    }
+  };
+
+  const handlePaste = () => {
+    if (!fabricCanvas || !(window as any).copiedObject) return;
+    
+    const copiedObj = (window as any).copiedObject;
+    
+    // Create new object based on type
+    let newObj: FabricObject;
+    
+    if (copiedObj.type === 'rect') {
+      newObj = new Rect({
+        ...copiedObj,
+        left: (copiedObj.left || 0) + 20,
+        top: (copiedObj.top || 0) + 20,
+      });
+    } else if (copiedObj.type === 'circle') {
+      newObj = new Circle({
+        ...copiedObj,
+        left: (copiedObj.left || 0) + 20,
+        top: (copiedObj.top || 0) + 20,
+      });
+    } else if (copiedObj.type === 'textbox' || copiedObj.type === 'text') {
+      newObj = new FabricText(copiedObj.text, {
+        ...copiedObj,
+        left: (copiedObj.left || 0) + 20,
+        top: (copiedObj.top || 0) + 20,
+      });
+    } else if (copiedObj.type === 'line') {
+      newObj = new Line(copiedObj.coords, {
+        ...copiedObj,
+        left: (copiedObj.left || 0) + 20,
+        top: (copiedObj.top || 0) + 20,
+      });
+    } else {
+      return;
+    }
+
+    fabricCanvas.add(newObj);
+    fabricCanvas.setActiveObject(newObj);
+    fabricCanvas.renderAll();
+    toast("Object pasted!");
   };
 
   return (
@@ -139,13 +387,31 @@ export const CanvasEditor = () => {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Design Editor</h1>
           <div className="flex items-center gap-4">
-            <ZoomControls zoom={zoom} onZoomChange={handleZoom} />
+            <div className="flex items-center gap-2 text-sm">
+              <button
+                onClick={() => setShowGrid(!showGrid)}
+                className={`px-3 py-1 rounded ${
+                  showGrid ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                Grid
+              </button>
+              <button
+                onClick={() => setSnapToGrid(!snapToGrid)}
+                className={`px-3 py-1 rounded ${
+                  snapToGrid ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                Snap
+              </button>
+            </div>
+            <ZoomControls zoom={zoom} onZoomChange={handleZoom} onFitToScreen={handleFitToScreen} />
           </div>
         </div>
       </div>
 
       {/* Main Editor */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden flex">
         {/* Floating Toolbar */}
         <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10">
           <Toolbar 
@@ -157,11 +423,24 @@ export const CanvasEditor = () => {
         </div>
 
         {/* Canvas Container */}
-        <div className="w-full h-full flex items-center justify-center p-8">
+        <div className="flex-1 flex items-center justify-center p-8">
           <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
             <canvas ref={canvasRef} className="block" />
           </div>
         </div>
+
+        {/* Properties Panel */}
+        {selectedObject && (
+          <PropertiesPanel 
+            selectedObject={selectedObject} 
+            onUpdate={(props) => {
+              if (selectedObject && fabricCanvas) {
+                selectedObject.set(props);
+                fabricCanvas.renderAll();
+              }
+            }}
+          />
+        )}
       </div>
     </div>
   );

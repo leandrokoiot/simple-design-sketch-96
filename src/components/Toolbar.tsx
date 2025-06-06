@@ -1,10 +1,10 @@
 
 import { Button } from "@/components/ui/button";
-import { MousePointer2, Square, Circle, Type, Trash2, RotateCcw } from "lucide-react";
+import { MousePointer2, Square, Circle, Type, Trash2, RotateCcw, Minus } from "lucide-react";
 
 interface ToolbarProps {
-  activeTool: "select" | "rectangle" | "circle" | "text";
-  onToolClick: (tool: "select" | "rectangle" | "circle" | "text") => void;
+  activeTool: "select" | "rectangle" | "circle" | "text" | "line";
+  onToolClick: (tool: "select" | "rectangle" | "circle" | "text" | "line") => void;
   onClear: () => void;
   onDelete: () => void;
 }
@@ -17,6 +17,7 @@ export const Toolbar = ({ activeTool, onToolClick, onClear, onDelete }: ToolbarP
         size="sm"
         onClick={() => onToolClick("select")}
         className="h-10 w-10 p-0"
+        title="Select (V)"
       >
         <MousePointer2 className="h-4 w-4" />
       </Button>
@@ -26,6 +27,7 @@ export const Toolbar = ({ activeTool, onToolClick, onClear, onDelete }: ToolbarP
         size="sm"
         onClick={() => onToolClick("rectangle")}
         className="h-10 w-10 p-0"
+        title="Rectangle (R)"
       >
         <Square className="h-4 w-4" />
       </Button>
@@ -35,6 +37,7 @@ export const Toolbar = ({ activeTool, onToolClick, onClear, onDelete }: ToolbarP
         size="sm"
         onClick={() => onToolClick("circle")}
         className="h-10 w-10 p-0"
+        title="Circle (C)"
       >
         <Circle className="h-4 w-4" />
       </Button>
@@ -44,8 +47,19 @@ export const Toolbar = ({ activeTool, onToolClick, onClear, onDelete }: ToolbarP
         size="sm"
         onClick={() => onToolClick("text")}
         className="h-10 w-10 p-0"
+        title="Text (T)"
       >
         <Type className="h-4 w-4" />
+      </Button>
+
+      <Button
+        variant={activeTool === "line" ? "default" : "ghost"}
+        size="sm"
+        onClick={() => onToolClick("line")}
+        className="h-10 w-10 p-0"
+        title="Line (L)"
+      >
+        <Minus className="h-4 w-4" />
       </Button>
 
       <div className="w-px h-6 bg-gray-200 mx-1" />
@@ -55,6 +69,7 @@ export const Toolbar = ({ activeTool, onToolClick, onClear, onDelete }: ToolbarP
         size="sm"
         onClick={onDelete}
         className="h-10 w-10 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+        title="Delete (Del)"
       >
         <Trash2 className="h-4 w-4" />
       </Button>
@@ -64,6 +79,7 @@ export const Toolbar = ({ activeTool, onToolClick, onClear, onDelete }: ToolbarP
         size="sm"
         onClick={onClear}
         className="h-10 w-10 p-0"
+        title="Clear All"
       >
         <RotateCcw className="h-4 w-4" />
       </Button>
