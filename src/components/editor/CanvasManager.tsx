@@ -1,6 +1,6 @@
 
 import { useEffect, useRef } from "react";
-import { Canvas as FabricCanvas, Point } from "fabric";
+import { Canvas as FabricCanvas } from "fabric";
 import { useCanvas } from "@/contexts/CanvasContext";
 import { useSelection } from "@/contexts/SelectionContext";
 import { useViewport } from "@/contexts/ViewportContext";

@@ -2,13 +2,15 @@
 import { useCallback } from 'react';
 import { Rect, FabricText } from 'fabric';
 import { useCanvas } from '@/contexts/CanvasContext';
+import { useViewport } from '@/contexts/ViewportContext';
 import { useArtboards } from '@/contexts/ArtboardContext';
-import { useArtboardSystem } from '@/hooks/useArtboardSystem';
+import { useArtboardMovement } from '@/hooks/artboard/useArtboardMovement';
 import { Artboard } from '@/utils/projectState';
 import { toast } from 'sonner';
 
 export const useArtboardCreator = () => {
-  const { fabricCanvas, zoom } = useCanvas();
+  const { fabricCanvas } = useCanvas();
+  const { zoom } = useViewport();
   const { 
     artboards, 
     setArtboards, 
@@ -16,7 +18,7 @@ export const useArtboardCreator = () => {
     findNextArtboardPosition 
   } = useArtboards();
   
-  const { applyArtboardRepulsion, setupArtboardMovement } = useArtboardSystem(fabricCanvas);
+  const { applyArtboardRepulsion, setupArtboardMovement } = useArtboardMovement(fabricCanvas);
 
   const createArtboard = useCallback((artboardData: Omit<Artboard, 'id'>) => {
     if (!fabricCanvas) return;
@@ -98,23 +100,23 @@ export const useArtboardCreator = () => {
     artboardRect.set({ opacity: 0, scaleX: 0.8, scaleY: 0.8 });
     artboardLabel.set({ opacity: 0 });
     
-    // Fixed animation calls for Fabric.js v6 - using correct parameter format
-    artboardRect.animate({ opacity: 1 }, {
+    // Fixed animation calls for Fabric.js v6
+    artboardRect.animate('opacity', 1, {
       duration: 300,
       onChange: () => fabricCanvas.renderAll()
     });
     
-    artboardRect.animate({ scaleX: 1 }, {
+    artboardRect.animate('scaleX', 1, {
       duration: 300,
       onChange: () => fabricCanvas.renderAll()
     });
     
-    artboardRect.animate({ scaleY: 1 }, {
+    artboardRect.animate('scaleY', 1, {
       duration: 300,
       onChange: () => fabricCanvas.renderAll()
     });
     
-    artboardLabel.animate({ opacity: 1 }, {
+    artboardLabel.animate('opacity', 1, {
       duration: 300,
       onChange: () => fabricCanvas.renderAll()
     });
