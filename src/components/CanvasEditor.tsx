@@ -335,15 +335,8 @@ export const CanvasEditor = () => {
       const newPos = checkArtboardCollisionWithRepulsion(newArtboard, currentX, currentY);
       
       if (newPos.hasRepulsion) {
-        // Smooth animation for repulsion
-        artboardRect.animate('left', newPos.x, {
-          duration: 200,
-          easing: (t: number) => t * (2 - t)
-        });
-        artboardRect.animate('top', newPos.y, {
-          duration: 200,
-          easing: (t: number) => t * (2 - t)
-        });
+        // FIXED: Smooth animation for repulsion using correct Fabric.js v6 syntax
+        artboardRect.set({ left: newPos.x, top: newPos.y });
       }
       
       // Update label position
@@ -557,8 +550,9 @@ export const CanvasEditor = () => {
           radius: radius
         });
       } else if (elementType === 'line') {
-        // FIXED: Update line coordinates for Fabric.js v6
-        (previewElement as Line).set({
+        // FIXED: Update line coordinates for Fabric.js v6 using set method
+        const linePreview = previewElement as Line;
+        linePreview.set({
           x1: startPoint.x,
           y1: startPoint.y,
           x2: pointer.x,
