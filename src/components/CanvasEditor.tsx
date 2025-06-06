@@ -514,6 +514,14 @@ export const CanvasEditor = () => {
             strokeDashArray: [5, 5]
           });
           break;
+        case 'line':
+          // FIXED: Use array coordinates for Fabric.js v6
+          preview = new Line([pointer.x, pointer.y, pointer.x, pointer.y], {
+            stroke: '#000',
+            strokeWidth: 1,
+            strokeDashArray: [5, 5]
+          });
+          break;
         default:
           return;
       }
@@ -548,6 +556,14 @@ export const CanvasEditor = () => {
           top: startPoint.y - radius,
           radius: radius
         });
+      } else if (elementType === 'line') {
+        // FIXED: Update line coordinates for Fabric.js v6
+        (previewElement as Line).set({
+          x1: startPoint.x,
+          y1: startPoint.y,
+          x2: pointer.x,
+          y2: pointer.y
+        });
       }
       
       fabricCanvas.renderAll();
@@ -573,12 +589,24 @@ export const CanvasEditor = () => {
           height: (previewElement as any).height || 50,
           fill: '#000000'
         });
-      } else {
+      } else if (elementType === 'circle') {
         finalElement = new Circle({
           left: previewElement.left,
           top: previewElement.top,
           radius: (previewElement as any).radius || 25,
           fill: '#000000'
+        });
+      } else {
+        // For line - FIXED: Use array coordinates for Fabric.js v6
+        const linePreview = previewElement as Line;
+        finalElement = new Line([
+          linePreview.x1 || 0,
+          linePreview.y1 || 0,
+          linePreview.x2 || 0,
+          linePreview.y2 || 0
+        ], {
+          stroke: '#000000',
+          strokeWidth: 2
         });
       }
       
@@ -756,7 +784,7 @@ export const CanvasEditor = () => {
     fabricCanvas.isDrawingMode = false;
 
     // For shapes, start interactive creation
-    if (tool === "rectangle" || tool === "circle") {
+    if (tool === "rectangle" || tool === "circle" || tool === "line") {
       startInteractiveCreation(tool);
       return;
     }
@@ -776,13 +804,6 @@ export const CanvasEditor = () => {
         fontFamily: "Inter, sans-serif",
         fontSize: 24,
         fill: "#000000",
-      });
-    } else if (tool === "line") {
-      console.log("Creating line...");
-      // FIXED: Use array coordinates for Fabric.js v6
-      newObject = new Line([canvasCenter.x - 75, canvasCenter.y, canvasCenter.x + 75, canvasCenter.y], {
-        stroke: "#000000",
-        strokeWidth: 2,
       });
     }
 
