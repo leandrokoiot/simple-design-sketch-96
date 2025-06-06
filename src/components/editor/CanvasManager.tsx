@@ -2,6 +2,8 @@
 import { useEffect, useRef } from "react";
 import { Canvas as FabricCanvas, Point } from "fabric";
 import { useCanvas } from "@/contexts/CanvasContext";
+import { useSelection } from "@/contexts/SelectionContext";
+import { useViewport } from "@/contexts/ViewportContext";
 import { useEditor } from "@/contexts/EditorContext";
 import { useArtboards } from "@/contexts/ArtboardContext";
 import { useArtboardSystem } from "@/hooks/useArtboardSystem";
@@ -9,13 +11,22 @@ import { useArtboardSystem } from "@/hooks/useArtboardSystem";
 export const CanvasManager = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cleanupFunctionsRef = useRef<Map<string, () => void>>(new Map());
+  
   const { 
     fabricCanvas, 
-    setFabricCanvas, 
+    setFabricCanvas,
+  } = useCanvas();
+  
+  const { 
     setSelectedObject,
+    clearSelection 
+  } = useSelection();
+  
+  const { 
     zoom,
     handleZoomChange 
-  } = useCanvas();
+  } = useViewport();
+  
   const { activeTool } = useEditor();
   const { artboards } = useArtboards();
   const { setupElementMovement, cleanup: cleanupArtboardSystem } = useArtboardSystem(fabricCanvas);
@@ -36,7 +47,7 @@ export const CanvasManager = () => {
     // Enhanced mouse wheel zoom with throttling
     let zoomTimeout: NodeJS.Timeout | null = null;
     canvas.on('mouse:wheel', (opt) => {
-      if (zoomTimeout) return; // Throttle zoom events
+      if (zoomTimeout) return;
       
       const delta = opt.e.deltaY;
       let newZoom = zoom;
@@ -50,13 +61,12 @@ export const CanvasManager = () => {
       }
       
       if (newZoom !== zoom) {
-        handleZoomChange(newZoom);
+        handleZoomChange(newZoom, canvas);
       }
       
-      // Throttle zoom events
       zoomTimeout = setTimeout(() => {
         zoomTimeout = null;
-      }, 16); // ~60fps throttling
+      }, 16);
       
       opt.e.preventDefault();
       opt.e.stopPropagation();
@@ -73,23 +83,22 @@ export const CanvasManager = () => {
     };
 
     const handleSelectionCleared = () => {
-      setSelectedObject(null);
+      clearSelection();
     };
 
-    // Object added event - setup element movement
+    // Object lifecycle events
     const handleObjectAdded = (e: any) => {
       const obj = e.target;
       if (obj && !(obj as any).isArtboard) {
         const cleanup = setupElementMovement(obj, artboards);
         if (cleanup) {
           const objId = (obj as any).id || `obj-${Date.now()}`;
-          (obj as any).id = objId; // Ensure object has an ID
+          (obj as any).id = objId;
           cleanupFunctionsRef.current.set(objId, cleanup);
         }
       }
     };
 
-    // Object removed event - cleanup
     const handleObjectRemoved = (e: any) => {
       const obj = e.target;
       const objId = (obj as any).id;
@@ -102,7 +111,7 @@ export const CanvasManager = () => {
         }
       }
 
-      // Legacy cleanup for backwards compatibility
+      // Legacy cleanup
       if ((obj as any).elementCleanup) {
         (obj as any).elementCleanup();
       }
@@ -123,19 +132,14 @@ export const CanvasManager = () => {
     return () => {
       console.log("Disposing canvas...");
       
-      // Clear zoom timeout
       if (zoomTimeout) {
         clearTimeout(zoomTimeout);
       }
 
-      // Cleanup all object event listeners
       cleanupFunctionsRef.current.forEach(cleanup => cleanup());
       cleanupFunctionsRef.current.clear();
-
-      // Cleanup artboard system
       cleanupArtboardSystem();
 
-      // Remove canvas event listeners
       canvas.off('selection:created', handleSelectionCreated);
       canvas.off('selection:updated', handleSelectionUpdated);
       canvas.off('selection:cleared', handleSelectionCleared);
@@ -152,24 +156,21 @@ export const CanvasManager = () => {
     fabricCanvas.isDrawingMode = activeTool === "draw";
   }, [activeTool, fabricCanvas]);
 
-  // Update element associations when artboards change (optimized)
+  // Update element associations when artboards change
   useEffect(() => {
     if (!fabricCanvas) return;
     
-    // Debounce artboard updates
     const updateTimeout = setTimeout(() => {
       const objects = fabricCanvas.getObjects();
       objects.forEach(obj => {
         if (!(obj as any).isArtboard) {
           const objId = (obj as any).id;
           if (objId) {
-            // Cleanup existing listener
             const existingCleanup = cleanupFunctionsRef.current.get(objId);
             if (existingCleanup) {
               existingCleanup();
             }
             
-            // Setup new listener with updated artboards
             const newCleanup = setupElementMovement(obj, artboards);
             if (newCleanup) {
               cleanupFunctionsRef.current.set(objId, newCleanup);
@@ -177,7 +178,7 @@ export const CanvasManager = () => {
           }
         }
       });
-    }, 100); // Debounce by 100ms
+    }, 100);
 
     return () => clearTimeout(updateTimeout);
   }, [artboards, fabricCanvas, setupElementMovement]);

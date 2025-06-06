@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Undo, Redo } from "lucide-react";
 
 import { CanvasProvider, useCanvas } from "@/contexts/CanvasContext";
+import { SelectionProvider, useSelection } from "@/contexts/SelectionContext";
+import { ViewportProvider, useViewport } from "@/contexts/ViewportContext";
 import { ArtboardProvider, useArtboards } from "@/contexts/ArtboardContext";
 import { EditorProvider, useEditor } from "@/contexts/EditorContext";
 
 import { useEditorTools } from "@/hooks/editor/useEditorTools";
-import { useUndoRedo } from "@/hooks/useUndoRedo";
+import { useCommandSystem } from "@/hooks/useCommandSystem";
 import { useLayerSystem } from "@/hooks/useLayerSystem";
 import { useArtboardCreator } from "@/hooks/editor/useArtboardCreator";
 import { useKeyboardShortcuts } from "@/hooks/editor/useKeyboardShortcuts";
@@ -23,11 +25,11 @@ import { useKeyboardShortcuts } from "@/hooks/editor/useKeyboardShortcuts";
 const CanvasEditorContent = () => {
   const { 
     fabricCanvas, 
-    selectedObject, 
-    canvasObjects, 
-    zoom, 
-    handleZoomChange 
+    canvasObjects 
   } = useCanvas();
+  
+  const { selectedObject } = useSelection();
+  const { zoom, handleZoomChange, fitToScreen } = useViewport();
   
   const { 
     artboards, 
@@ -39,13 +41,11 @@ const CanvasEditorContent = () => {
   const { createArtboard } = useArtboardCreator();
   
   const {
-    saveState,
     undo,
     redo,
     canUndo,
     canRedo,
-    initializeHistory
-  } = useUndoRedo(fabricCanvas);
+  } = useCommandSystem(fabricCanvas);
 
   const { 
     layers, 
@@ -58,31 +58,8 @@ const CanvasEditorContent = () => {
     deleteLayer
   } = useLayerSystem(fabricCanvas);
 
-  // Initialize history when canvas is ready
-  useEffect(() => {
-    if (fabricCanvas) {
-      initializeHistory();
-    }
-  }, [fabricCanvas, initializeHistory]);
-
   // Setup keyboard shortcuts
   useKeyboardShortcuts();
-
-  const handleFitToScreen = () => {
-    if (!fabricCanvas) return;
-    
-    const canvasWidth = fabricCanvas.width || 1200;
-    const canvasHeight = fabricCanvas.height || 800;
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
-    
-    const scaleX = (windowWidth * 0.8) / canvasWidth;
-    const scaleY = (windowHeight * 0.8) / canvasHeight;
-    const optimalScale = Math.min(scaleX, scaleY);
-    
-    const newZoom = Math.round(optimalScale * 100);
-    handleZoomChange(Math.max(10, Math.min(500, newZoom)));
-  };
 
   const handleSelectObject = (obj: any) => {
     if (!fabricCanvas) return;
@@ -108,8 +85,8 @@ const CanvasEditorContent = () => {
       <div className="fixed bottom-6 right-6 z-40">
         <ZoomControls
           zoom={zoom}
-          onZoomChange={handleZoomChange}
-          onFitToScreen={handleFitToScreen}
+          onZoomChange={(newZoom) => handleZoomChange(newZoom, fabricCanvas)}
+          onFitToScreen={() => fitToScreen(fabricCanvas)}
         />
       </div>
 
@@ -128,7 +105,6 @@ const CanvasEditorContent = () => {
             if (selectedObject && fabricCanvas) {
               selectedObject.set(props);
               fabricCanvas.renderAll();
-              saveState('Propriedades atualizadas');
             }
           }}
         />
@@ -199,9 +175,13 @@ export const CanvasEditor = () => {
   return (
     <EditorProvider>
       <CanvasProvider>
-        <ArtboardProvider>
-          <CanvasEditorContent />
-        </ArtboardProvider>
+        <SelectionProvider>
+          <ViewportProvider>
+            <ArtboardProvider>
+              <CanvasEditorContent />
+            </ArtboardProvider>
+          </ViewportProvider>
+        </SelectionProvider>
       </CanvasProvider>
     </EditorProvider>
   );
