@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from "react";
 import { FabricObject } from "fabric";
-import { TextPropertiesPanel } from "./TextPropertiesPanel";
+import { ModernTextPanel } from "./ModernTextPanel";
 
 interface MinimalPropertiesPanelProps {
   selectedObject: FabricObject;
@@ -21,13 +21,9 @@ export const MinimalPropertiesPanel = ({ selectedObject, onUpdate }: MinimalProp
     }
   }, [selectedObject]);
 
-  // If it's a text object, show the text properties panel
+  // If it's a text object, show the modern text panel
   if (selectedObject && (selectedObject.type === 'textbox' || selectedObject.type === 'text')) {
-    return (
-      <div className="fixed top-6 left-6 z-50">
-        <TextPropertiesPanel selectedObject={selectedObject} onUpdate={onUpdate} />
-      </div>
-    );
+    return <ModernTextPanel selectedObject={selectedObject} onUpdate={onUpdate} />;
   }
 
   const handleFillChange = (newFill: string) => {
