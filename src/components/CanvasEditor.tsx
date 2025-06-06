@@ -75,7 +75,7 @@ export const CanvasEditor = () => {
     }
   }, [fabricCanvas]);
 
-  // Update objects list with debounce
+  // Update objects list
   const updateObjectsList = useCallback(() => {
     if (!fabricCanvas) return;
     const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine && !(obj as any).isArtboard);
@@ -83,7 +83,7 @@ export const CanvasEditor = () => {
     console.log(`Objects updated: ${objects.length} objects`);
   }, [fabricCanvas]);
 
-  // Draw grid on canvas
+  // Draw grid on canvas - FIXED Line constructor
   const drawGrid = useCallback((canvas: FabricCanvas) => {
     if (!showGrid) return;
 
@@ -94,9 +94,10 @@ export const CanvasEditor = () => {
     const existingGrid = canvas.getObjects().filter(obj => (obj as any).isGridLine);
     existingGrid.forEach(line => canvas.remove(line));
 
-    // Draw vertical lines
+    // Draw vertical lines - FIXED: Use proper Line constructor
     for (let i = 0; i <= canvasWidth; i += gridSize) {
-      const line = new Line([i, 0, i, canvasHeight], {
+      const line = new Line({
+        x1: i, y1: 0, x2: i, y2: canvasHeight,
         stroke: '#e5e7eb',
         strokeWidth: 1,
         selectable: false,
@@ -107,9 +108,10 @@ export const CanvasEditor = () => {
       canvas.sendObjectToBack(line);
     }
 
-    // Draw horizontal lines
+    // Draw horizontal lines - FIXED: Use proper Line constructor
     for (let i = 0; i <= canvasHeight; i += gridSize) {
-      const line = new Line([0, i, canvasWidth, i], {
+      const line = new Line({
+        x1: 0, y1: i, x2: canvasWidth, y2: i,
         stroke: '#e5e7eb',
         strokeWidth: 1,
         selectable: false,
@@ -134,11 +136,10 @@ export const CanvasEditor = () => {
     });
   }, [snapToGrid, gridSize]);
 
-  // Enhanced zoom functionality with better limits
+  // Enhanced zoom functionality
   const handleZoomChange = useCallback((newZoom: number) => {
     if (!fabricCanvas) return;
     
-    // Expanded zoom range
     const clampedZoom = Math.max(10, Math.min(500, newZoom));
     const zoomLevel = clampedZoom / 100;
     setZoom(clampedZoom);
@@ -146,14 +147,12 @@ export const CanvasEditor = () => {
     const center = fabricCanvas.getCenter();
     fabricCanvas.zoomToPoint(new Point(center.left, center.top), zoomLevel);
     
-    // Update artboard labels to maintain fixed size
     updateArtboardLabelsSize(fabricCanvas, zoomLevel);
-    
     fabricCanvas.renderAll();
     console.log(`Zoom changed to ${clampedZoom}%`);
   }, [fabricCanvas]);
 
-  // Update artboard labels to maintain consistent size regardless of zoom
+  // Update artboard labels size based on zoom
   const updateArtboardLabelsSize = useCallback((canvas: FabricCanvas, zoomLevel: number) => {
     const objects = canvas.getObjects();
     objects.forEach(obj => {
@@ -189,9 +188,9 @@ export const CanvasEditor = () => {
     handleZoomChange(Math.max(10, Math.min(500, newZoom)));
   }, [fabricCanvas, handleZoomChange]);
 
-  // Enhanced artboard collision with smooth repulsion animation
+  // IMPLEMENTED: Enhanced artboard collision with REAL repulsion animation
   const checkArtboardCollisionWithRepulsion = useCallback((movingArtboard: Artboard, newX: number, newY: number) => {
-    const buffer = 80;
+    const buffer = 100; // Increased buffer for better repulsion
     let finalX = newX;
     let finalY = newY;
     let hasRepulsion = false;
@@ -199,8 +198,14 @@ export const CanvasEditor = () => {
     for (const artboard of artboards) {
       if (artboard.id === movingArtboard.id) continue;
       
+      // Calculate distance between centers
+      const centerX1 = newX + movingArtboard.width / 2;
+      const centerY1 = newY + movingArtboard.height / 2;
+      const centerX2 = artboard.x + artboard.width / 2;
+      const centerY2 = artboard.y + artboard.height / 2;
+      
       const distance = Math.sqrt(
-        Math.pow(newX - artboard.x, 2) + Math.pow(newY - artboard.y, 2)
+        Math.pow(centerX1 - centerX2, 2) + Math.pow(centerY1 - centerY2, 2)
       );
       
       if (distance < buffer) {
@@ -214,17 +219,20 @@ export const CanvasEditor = () => {
         finalX += repulsion.x;
         finalY += repulsion.y;
         
-        // Add visual feedback for repulsion
+        // IMPLEMENTED: Visual feedback for repulsion
         const artboardElement = fabricCanvas?.getObjects().find(obj => 
           (obj as any).artboardId === artboard.id && obj.type === 'rect'
         ) as Rect;
         
         if (artboardElement) {
-          artboardElement.set({ stroke: '#ef4444', strokeWidth: 3 });
+          // Red highlight during repulsion
+          artboardElement.set({ stroke: '#ef4444', strokeWidth: 4 / (zoom / 100) });
+          fabricCanvas?.renderAll();
+          
           setTimeout(() => {
             artboardElement.set({ stroke: '#3b82f6', strokeWidth: 2 / (zoom / 100) });
             fabricCanvas?.renderAll();
-          }, 200);
+          }, 300);
         }
       }
     }
@@ -232,19 +240,19 @@ export const CanvasEditor = () => {
     return { x: finalX, y: finalY, hasRepulsion };
   }, [artboards, fabricCanvas, zoom]);
 
-  // Find next available position for artboard to avoid overlap
+  // IMPLEMENTED: Find next available position for artboard
   const findNextArtboardPosition = useCallback(() => {
     if (artboards.length === 0) {
       return { x: 100, y: 100 };
     }
 
-    const buffer = 50;
+    const buffer = 80;
     let attempts = 0;
     const maxAttempts = 100;
     
     while (attempts < maxAttempts) {
-      const x = 100 + (attempts % 5) * 400;
-      const y = 100 + Math.floor(attempts / 5) * 300;
+      const x = 100 + (attempts % 4) * 350;
+      const y = 100 + Math.floor(attempts / 4) * 250;
       
       let collision = false;
       for (const artboard of artboards) {
@@ -267,7 +275,7 @@ export const CanvasEditor = () => {
     return { x: maxRight + buffer, y: 100 };
   }, [artboards]);
 
-  // Enhanced artboard creation with containment system
+  // IMPLEMENTED: Enhanced artboard creation with REAL containment system
   const createArtboard = useCallback((artboardData: Omit<Artboard, 'id'>) => {
     if (!fabricCanvas) return;
 
@@ -283,10 +291,12 @@ export const CanvasEditor = () => {
       y: position.y,
       width: Math.min(artboardData.width, 800),
       height: Math.min(artboardData.height, 600),
-      backgroundColor: '#ffffff'
+      backgroundColor: '#ffffff',
+      isActive: true,
+      elementIds: []
     };
 
-    // Create enhanced artboard visual with containment
+    // Create artboard visual
     const artboardRect = new Rect({
       left: newArtboard.x,
       top: newArtboard.y,
@@ -318,46 +328,53 @@ export const CanvasEditor = () => {
     (artboardLabel as any).isArtboard = true;
     (artboardLabel as any).artboardId = newArtboard.id;
 
-    // Enhanced movement with repulsion and element containment
-    artboardRect.on('moving', (e) => {
-      const newPos = checkArtboardCollisionWithRepulsion(newArtboard, artboardRect.left || 0, artboardRect.top || 0);
+    // IMPLEMENTED: Enhanced movement with repulsion and element containment
+    artboardRect.on('moving', () => {
+      const currentX = artboardRect.left || 0;
+      const currentY = artboardRect.top || 0;
       
-      // Apply smooth animation for repulsion
+      // Apply repulsion
+      const newPos = checkArtboardCollisionWithRepulsion(newArtboard, currentX, currentY);
+      
       if (newPos.hasRepulsion) {
+        // Smooth animation for repulsion
         artboardRect.animate('left', newPos.x, {
           duration: 200,
-          easing: (t: number) => t * (2 - t) // easeOut
+          easing: (t: number) => t * (2 - t)
         });
         artboardRect.animate('top', newPos.y, {
           duration: 200,
           easing: (t: number) => t * (2 - t)
         });
-      } else {
-        artboardRect.set({ left: newPos.x, top: newPos.y });
       }
       
+      // Update label position
       artboardLabel.set({
         left: (artboardRect.left || 0) + 10,
         top: (artboardRect.top || 0) - 30
       });
       
-      // Update artboard data
-      newArtboard.x = artboardRect.left || 0;
-      newArtboard.y = artboardRect.top || 0;
+      // IMPLEMENTED: Move contained elements with artboard
+      const deltaX = (artboardRect.left || 0) - newArtboard.x;
+      const deltaY = (artboardRect.top || 0) - newArtboard.y;
       
-      // Move contained elements
-      const containedElements = findElementsInArtboard(fabricCanvas.getObjects(), newArtboard);
-      containedElements.forEach(element => {
-        if (!(element as any).isArtboard && (element as any).artboardId === newArtboard.id) {
-          const deltaX = (artboardRect.left || 0) - (newArtboard.x || 0);
-          const deltaY = (artboardRect.top || 0) - (newArtboard.y || 0);
+      if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+        const containedElements = fabricCanvas.getObjects().filter(obj => 
+          (obj as any).artboardId === newArtboard.id && !(obj as any).isArtboard
+        );
+        
+        containedElements.forEach(element => {
           element.set({
             left: (element.left || 0) + deltaX,
             top: (element.top || 0) + deltaY
           });
           element.setCoords();
-        }
-      });
+        });
+      }
+      
+      // Update artboard data
+      newArtboard.x = artboardRect.left || 0;
+      newArtboard.y = artboardRect.top || 0;
       
       fabricCanvas.renderAll();
     });
@@ -365,22 +382,12 @@ export const CanvasEditor = () => {
     // Selection event for artboard management
     artboardRect.on('selected', () => {
       setSelectedArtboard(newArtboard);
+      console.log(`Artboard selected: ${newArtboard.name}`);
     });
 
     fabricCanvas.add(artboardRect);
     fabricCanvas.add(artboardLabel);
     fabricCanvas.sendObjectToBack(artboardRect);
-
-    // Auto-adjust canvas size if needed
-    const requiredWidth = newArtboard.x + newArtboard.width + 100;
-    const requiredHeight = newArtboard.y + newArtboard.height + 100;
-    
-    if (requiredWidth > fabricCanvas.width! || requiredHeight > fabricCanvas.height!) {
-      fabricCanvas.setDimensions({
-        width: Math.max(fabricCanvas.width!, requiredWidth),
-        height: Math.max(fabricCanvas.height!, requiredHeight)
-      });
-    }
 
     fabricCanvas.renderAll();
     setArtboards(prev => [...prev, newArtboard]);
@@ -404,9 +411,29 @@ export const CanvasEditor = () => {
         (obj as any).artboardId === id && obj.type === 'rect'
       ) as Rect;
       
-      if (artboardElement && updates.backgroundColor) {
-        artboardElement.set({ fill: updates.backgroundColor });
+      if (artboardElement) {
+        if (updates.backgroundColor) {
+          artboardElement.set({ fill: updates.backgroundColor });
+        }
+        if (updates.width) {
+          artboardElement.set({ width: updates.width });
+        }
+        if (updates.height) {
+          artboardElement.set({ height: updates.height });
+        }
         fabricCanvas.renderAll();
+      }
+      
+      // Update label if name changed
+      if (updates.name) {
+        const labelElement = fabricCanvas.getObjects().find(obj => 
+          (obj as any).artboardId === id && obj.type === 'text'
+        ) as FabricText;
+        
+        if (labelElement) {
+          labelElement.set({ text: updates.name });
+          fabricCanvas.renderAll();
+        }
       }
     }
   }, [fabricCanvas]);
@@ -420,13 +447,6 @@ export const CanvasEditor = () => {
     );
     
     artboardElements.forEach(element => fabricCanvas.remove(element));
-    
-    // Remove contained elements
-    const containedElements = fabricCanvas.getObjects().filter(obj => 
-      (obj as any).artboardId === id
-    );
-    
-    containedElements.forEach(element => fabricCanvas.remove(element));
     
     setArtboards(prev => prev.filter(ab => ab.id !== id));
     setSelectedArtboard(null);
@@ -452,9 +472,7 @@ export const CanvasEditor = () => {
     toast(`Zoomed to artboard: ${artboard.name}`);
   }, [artboards, fabricCanvas]);
 
-  // Copy/Paste/Delete handlers, updateObjectsList, drawGrid, snapToGridFn, handleZoomChange, updateArtboardLabelsSize, handleFitToScreen, checkArtboardCollisionWithRepulsion, createArtboard, handleUpdateArtboard, handleDeleteArtboard, handleZoomToArtboard already defined above
-
-  // Interactive element creation with preview
+  // IMPLEMENTED: Interactive element creation with preview
   const startInteractiveCreation = useCallback((elementType: string) => {
     if (!fabricCanvas) return;
     
@@ -566,6 +584,17 @@ export const CanvasEditor = () => {
         });
       }
       
+      // IMPLEMENTED: Auto-assign element to artboard if created inside one
+      const containingArtboard = artboards.find(artboard => 
+        checkElementInArtboard(finalElement, artboard)
+      );
+      
+      if (containingArtboard) {
+        (finalElement as any).artboardId = containingArtboard.id;
+        console.log(`Element assigned to artboard: ${containingArtboard.name}`);
+        toast(`Element added to artboard: ${containingArtboard.name}`);
+      }
+      
       fabricCanvas.add(finalElement);
       fabricCanvas.setActiveObject(finalElement);
       fabricCanvas.renderAll();
@@ -585,9 +614,9 @@ export const CanvasEditor = () => {
     fabricCanvas.on('mouse:move', handleMouseMove);
     fabricCanvas.on('mouse:up', handleMouseUp);
     
-  }, [fabricCanvas, isCreatingElement, previewElement]);
+  }, [fabricCanvas, isCreatingElement, previewElement, artboards]);
 
-  // Initialize canvas only once
+  // Initialize canvas
   useEffect(() => {
     if (!canvasRef.current || fabricCanvas) return;
 
@@ -601,12 +630,11 @@ export const CanvasEditor = () => {
     canvas.selection = true;
     canvas.preserveObjectStacking = true;
 
-    // Enhanced mouse wheel zoom with better increments
+    // Enhanced mouse wheel zoom
     canvas.on('mouse:wheel', (opt) => {
       const delta = opt.e.deltaY;
       let newZoom = zoom;
       
-      // Better zoom increments
       const zoomStep = zoom < 100 ? 5 : zoom < 200 ? 10 : 25;
       
       if (delta > 0) {
@@ -753,18 +781,28 @@ export const CanvasEditor = () => {
       });
     } else if (tool === "line") {
       console.log("Creating line...");
-      newObject = new Line([
-        canvasCenter.x - 75, 
-        canvasCenter.y, 
-        canvasCenter.x + 75, 
-        canvasCenter.y
-      ], {
+      // FIXED: Use proper Line constructor for Fabric.js v6
+      newObject = new Line({
+        x1: canvasCenter.x - 75,
+        y1: canvasCenter.y,
+        x2: canvasCenter.x + 75,
+        y2: canvasCenter.y,
         stroke: "#000000",
         strokeWidth: 2,
       });
     }
 
     if (newObject) {
+      // IMPLEMENTED: Auto-assign to artboard if created inside one
+      const containingArtboard = artboards.find(artboard => 
+        checkElementInArtboard(newObject!, artboard)
+      );
+      
+      if (containingArtboard) {
+        (newObject as any).artboardId = containingArtboard.id;
+        console.log(`Element assigned to artboard: ${containingArtboard.name}`);
+      }
+      
       fabricCanvas.add(newObject);
       fabricCanvas.setActiveObject(newObject);
       fabricCanvas.renderAll();
@@ -774,6 +812,39 @@ export const CanvasEditor = () => {
       createNewVersion(`Added ${tool}`, fabricCanvas.toJSON(), zoom, artboards);
     }
   }, [fabricCanvas, zoom, artboards, createNewVersion, startInteractiveCreation]);
+
+  // IMPLEMENTED: Enhanced object movement with artboard containment
+  useEffect(() => {
+    if (!fabricCanvas) return;
+
+    const handleObjectMoving = (e: any) => {
+      const obj = e.target;
+      if ((obj as any).isArtboard) return;
+
+      // Check if object should be contained in artboard
+      const containingArtboard = artboards.find(artboard => 
+        checkElementInArtboard(obj, artboard)
+      );
+
+      if (containingArtboard) {
+        // Assign element to artboard if not already assigned
+        if ((obj as any).artboardId !== containingArtboard.id) {
+          (obj as any).artboardId = containingArtboard.id;
+          console.log(`Element auto-assigned to artboard: ${containingArtboard.name}`);
+        }
+        
+        // Constrain element to artboard boundaries
+        constrainElementToArtboard(obj, containingArtboard);
+        fabricCanvas.renderAll();
+      }
+    };
+
+    fabricCanvas.on('object:moving', handleObjectMoving);
+
+    return () => {
+      fabricCanvas.off('object:moving', handleObjectMoving);
+    };
+  }, [fabricCanvas, artboards]);
 
   const handleSelectObject = (obj: FabricObject) => {
     if (!fabricCanvas) return;
@@ -788,173 +859,6 @@ export const CanvasEditor = () => {
     setSelectedObject(null);
   };
 
-  const handleAlign = (alignment: string) => {
-    if (!fabricCanvas) return;
-    
-    const activeObjects = fabricCanvas.getActiveObjects();
-    if (activeObjects.length === 0) return;
-
-    const canvasWidth = fabricCanvas.width || 1200;
-    const canvasHeight = fabricCanvas.height || 800;
-
-    activeObjects.forEach(obj => {
-      switch (alignment) {
-        case 'left':
-          obj.set({ left: 0 });
-          break;
-        case 'center':
-          obj.set({ left: (canvasWidth - (obj.width || 0) * (obj.scaleX || 1)) / 2 });
-          break;
-        case 'right':
-          obj.set({ left: canvasWidth - (obj.width || 0) * (obj.scaleX || 1) });
-          break;
-        case 'top':
-          obj.set({ top: 0 });
-          break;
-        case 'middle':
-          obj.set({ top: (canvasHeight - (obj.height || 0) * (obj.scaleY || 1)) / 2 });
-          break;
-        case 'bottom':
-          obj.set({ top: canvasHeight - (obj.height || 0) * (obj.scaleY || 1) });
-          break;
-      }
-      obj.setCoords();
-    });
-
-    fabricCanvas.renderAll();
-    toast(`Aligned ${activeObjects.length} object(s) to ${alignment}`);
-  };
-
-  const handleDistribute = (direction: 'horizontal' | 'vertical') => {
-    if (!fabricCanvas) return;
-    
-    const activeObjects = fabricCanvas.getActiveObjects();
-    if (activeObjects.length < 3) {
-      toast("Select at least 3 objects to distribute");
-      return;
-    }
-
-    if (direction === 'horizontal') {
-      const sortedObjects = [...activeObjects].sort((a, b) => (a.left || 0) - (b.left || 0));
-      const leftmost = sortedObjects[0].left || 0;
-      const rightmost = (sortedObjects[sortedObjects.length - 1].left || 0) + 
-                       (sortedObjects[sortedObjects.length - 1].width || 0) * (sortedObjects[sortedObjects.length - 1].scaleX || 1);
-      
-      const totalWidth = rightmost - leftmost;
-      const spacing = totalWidth / (sortedObjects.length - 1);
-      
-      sortedObjects.forEach((obj, index) => {
-        if (index > 0 && index < sortedObjects.length - 1) {
-          obj.set({ left: leftmost + spacing * index });
-          obj.setCoords();
-        }
-      });
-    } else {
-      const sortedObjects = [...activeObjects].sort((a, b) => (a.top || 0) - (b.top || 0));
-      const topmost = sortedObjects[0].top || 0;
-      const bottommost = (sortedObjects[sortedObjects.length - 1].top || 0) + 
-                        (sortedObjects[sortedObjects.length - 1].height || 0) * (sortedObjects[sortedObjects.length - 1].scaleY || 1);
-      
-      const totalHeight = bottommost - topmost;
-      const spacing = totalHeight / (sortedObjects.length - 1);
-      
-      sortedObjects.forEach((obj, index) => {
-        if (index > 0 && index < sortedObjects.length - 1) {
-          obj.set({ top: topmost + spacing * index });
-          obj.setCoords();
-        }
-      });
-    }
-
-    fabricCanvas.renderAll();
-    toast(`Distributed ${activeObjects.length} objects ${direction}ly`);
-  };
-
-  const handleGroup = () => {
-    if (!fabricCanvas) return;
-    
-    const activeObjects = fabricCanvas.getActiveObjects();
-    if (activeObjects.length < 2) {
-      toast("Select at least 2 objects to group");
-      return;
-    }
-
-    const group = new Group(activeObjects, {
-      left: Math.min(...activeObjects.map(obj => obj.left || 0)),
-      top: Math.min(...activeObjects.map(obj => obj.top || 0)),
-    });
-
-    activeObjects.forEach(obj => fabricCanvas.remove(obj));
-    fabricCanvas.add(group);
-    fabricCanvas.setActiveObject(group);
-    fabricCanvas.renderAll();
-    toast("Objects grouped!");
-  };
-
-  const handleUngroup = () => {
-    if (!fabricCanvas) return;
-    
-    const activeObject = fabricCanvas.getActiveObject();
-    if (!activeObject || activeObject.type !== 'group') {
-      toast("Select a group to ungroup");
-      return;
-    }
-
-    const group = activeObject as Group;
-    const objects = group.getObjects();
-    
-    fabricCanvas.remove(group);
-    objects.forEach(obj => {
-      fabricCanvas.add(obj);
-    });
-    
-    fabricCanvas.renderAll();
-    toast("Group ungrouped!");
-  };
-
-  const handleToggleVisibility = (obj: FabricObject) => {
-    obj.set({ visible: !obj.visible });
-    fabricCanvas?.renderAll();
-  };
-
-  const handleToggleLock = (obj: FabricObject) => {
-    const isLocked = (obj as any).lockMovementX;
-    (obj as any).lockMovementX = !isLocked;
-    (obj as any).lockMovementY = !isLocked;
-    (obj as any).lockRotation = !isLocked;
-    (obj as any).lockScalingX = !isLocked;
-    (obj as any).lockScalingY = !isLocked;
-    obj.selectable = isLocked;
-    fabricCanvas?.renderAll();
-  };
-
-  // Enhanced object movement with artboard containment
-  useEffect(() => {
-    if (!fabricCanvas) return;
-
-    const handleObjectMoving = (e: any) => {
-      const obj = e.target;
-      if ((obj as any).isArtboard) return;
-
-      // Check if object should be contained in artboard
-      const containingArtboard = artboards.find(artboard => 
-        checkElementInArtboard(obj, artboard)
-      );
-
-      if (containingArtboard) {
-        (obj as any).artboardId = containingArtboard.id;
-        constrainElementToArtboard(obj, containingArtboard);
-        fabricCanvas.renderAll();
-      }
-    };
-
-    fabricCanvas.on('object:moving', handleObjectMoving);
-
-    return () => {
-      fabricCanvas.off('object:moving', handleObjectMoving);
-    };
-  }, [fabricCanvas, artboards]);
-
   return (
     <div className="h-screen w-screen bg-gray-50 relative overflow-hidden">
       {/* Canvas */}
@@ -963,7 +867,7 @@ export const CanvasEditor = () => {
       {/* Debug Panel */}
       <DebugPanel canvasState={fabricCanvas} zoom={zoom} artboards={artboards} />
 
-      {/* Zoom Controls - Fixed positioning */}
+      {/* Zoom Controls */}
       <div className="fixed bottom-6 right-6 z-40">
         <ZoomControls
           zoom={zoom}
@@ -994,6 +898,7 @@ export const CanvasEditor = () => {
         <ArtboardManager
           artboards={artboards}
           selectedArtboard={selectedArtboard}
+          canvasObjects={canvasObjects}
           onUpdateArtboard={handleUpdateArtboard}
           onDeleteArtboard={handleDeleteArtboard}
           onDuplicateArtboard={(id) => {

@@ -1,19 +1,17 @@
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { 
-  Palette, 
   Copy, 
   Trash2, 
-  Eye, 
-  EyeOff,
   ZoomIn,
   Download
 } from "lucide-react";
 import { Artboard } from "@/utils/projectState";
+import { FabricObject } from "fabric";
 
 interface ArtboardManagerProps {
   artboards: Artboard[];
@@ -23,6 +21,7 @@ interface ArtboardManagerProps {
   onDuplicateArtboard: (id: string) => void;
   onZoomToArtboard: (id: string) => void;
   onExportArtboard: (id: string) => void;
+  canvasObjects?: FabricObject[]; // Optional prop to count elements
 }
 
 export const ArtboardManager = ({
@@ -32,9 +31,20 @@ export const ArtboardManager = ({
   onDeleteArtboard,
   onDuplicateArtboard,
   onZoomToArtboard,
-  onExportArtboard
+  onExportArtboard,
+  canvasObjects = []
 }: ArtboardManagerProps) => {
   const [backgroundColor, setBackgroundColor] = useState("#ffffff");
+
+  // Calculate elements in selected artboard
+  const elementsInArtboard = useMemo(() => {
+    if (!selectedArtboard) return 0;
+    return canvasObjects.filter(obj => 
+      (obj as any).artboardId === selectedArtboard.id && 
+      !(obj as any).isArtboard &&
+      !(obj as any).isGridLine
+    ).length;
+  }, [selectedArtboard, canvasObjects]);
 
   const handleColorChange = (color: string) => {
     setBackgroundColor(color);
@@ -51,22 +61,36 @@ export const ArtboardManager = ({
         
         {artboards.length > 0 && (
           <div className="mt-4 space-y-2">
-            <Label className="text-xs">All Artboards</Label>
-            {artboards.map((artboard) => (
-              <div key={artboard.id} className="flex items-center justify-between p-2 border rounded">
-                <span className="text-xs truncate">{artboard.name}</span>
-                <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => onZoomToArtboard(artboard.id)}
-                    className="h-6 w-6 p-0"
-                  >
-                    <ZoomIn className="w-3 h-3" />
-                  </Button>
+            <Label className="text-xs">All Artboards ({artboards.length})</Label>
+            {artboards.map((artboard) => {
+              const elementsCount = canvasObjects.filter(obj => 
+                (obj as any).artboardId === artboard.id && 
+                !(obj as any).isArtboard &&
+                !(obj as any).isGridLine
+              ).length;
+              
+              return (
+                <div key={artboard.id} className="flex items-center justify-between p-3 border rounded hover:bg-muted/50 transition-colors">
+                  <div className="flex-1">
+                    <div className="text-xs font-medium truncate">{artboard.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {artboard.width} × {artboard.height} • {elementsCount} elements
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onZoomToArtboard(artboard.id)}
+                      className="h-6 w-6 p-0"
+                      title="Zoom to artboard"
+                    >
+                      <ZoomIn className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -91,6 +115,7 @@ export const ArtboardManager = ({
           value={selectedArtboard.name}
           onChange={(e) => onUpdateArtboard(selectedArtboard.id, { name: e.target.value })}
           className="text-xs h-8 mt-1"
+          placeholder="Artboard name"
         />
       </div>
 
@@ -103,6 +128,8 @@ export const ArtboardManager = ({
             value={selectedArtboard.width}
             onChange={(e) => onUpdateArtboard(selectedArtboard.id, { width: Number(e.target.value) })}
             className="text-xs h-8 mt-1"
+            min="50"
+            max="2000"
           />
         </div>
         <div>
@@ -112,6 +139,8 @@ export const ArtboardManager = ({
             value={selectedArtboard.height}
             onChange={(e) => onUpdateArtboard(selectedArtboard.id, { height: Number(e.target.value) })}
             className="text-xs h-8 mt-1"
+            min="50"
+            max="2000"
           />
         </div>
       </div>
@@ -122,13 +151,13 @@ export const ArtboardManager = ({
         <div className="flex gap-2">
           <input
             type="color"
-            value={backgroundColor}
+            value={selectedArtboard.backgroundColor || backgroundColor}
             onChange={(e) => handleColorChange(e.target.value)}
             className="w-10 h-8 border border-border rounded cursor-pointer"
           />
           <Input
             type="text"
-            value={backgroundColor}
+            value={selectedArtboard.backgroundColor || backgroundColor}
             onChange={(e) => handleColorChange(e.target.value)}
             className="text-xs h-8 flex-1"
             placeholder="#ffffff"
@@ -185,11 +214,21 @@ export const ArtboardManager = ({
         </div>
       </div>
 
-      {/* Element Count */}
-      <div className="pt-2 border-t">
+      {/* Element Count & Info */}
+      <div className="pt-2 border-t space-y-2">
         <div className="text-xs text-muted-foreground">
-          Elements in this artboard: <span className="font-medium">0</span>
+          Elements in this artboard: <span className="font-medium text-foreground">{elementsInArtboard}</span>
         </div>
+        
+        <div className="text-xs text-muted-foreground">
+          Position: <span className="font-medium">{Math.round(selectedArtboard.x)}, {Math.round(selectedArtboard.y)}</span>
+        </div>
+        
+        {selectedArtboard.isActive && (
+          <div className="text-xs text-blue-600 font-medium">
+            ● Active Artboard
+          </div>
+        )}
       </div>
     </div>
   );
