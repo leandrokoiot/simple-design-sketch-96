@@ -3,6 +3,10 @@ import { Canvas as FabricCanvas, Circle, Rect, FabricText, Line, FabricObject, P
 import { MinimalSidebar } from "./MinimalSidebar";
 import { MinimalLayersPanel } from "./MinimalLayersPanel";
 import { MinimalPropertiesPanel } from "./MinimalPropertiesPanel";
+import { ZoomControls } from "./ZoomControls";
+import { DebugPanel } from "./DebugPanel";
+import { useVersionControl } from "@/hooks/useVersionControl";
+import { Artboard } from "@/utils/projectState";
 import { toast } from "sonner";
 
 export const CanvasEditor = () => {
@@ -15,13 +19,17 @@ export const CanvasEditor = () => {
   const [clipboard, setClipboard] = useState<FabricObject | null>(null);
   const [showGrid, setShowGrid] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
+  const [zoom, setZoom] = useState(100);
+  const [artboards, setArtboards] = useState<Artboard[]>([]);
+
+  const { createNewVersion } = useVersionControl();
 
   const gridSize = 20;
 
   // Update objects list with debounce
   const updateObjectsList = useCallback(() => {
     if (!fabricCanvas) return;
-    const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine);
+    const objects = fabricCanvas.getObjects().filter(obj => !(obj as any).isGridLine && !(obj as any).isArtboard);
     setCanvasObjects(objects);
     console.log(`Objects updated: ${objects.length} objects`);
   }, [fabricCanvas]);
@@ -77,42 +85,74 @@ export const CanvasEditor = () => {
     });
   }, [snapToGrid, gridSize]);
 
-  const handleDelete = useCallback(() => {
+  // Zoom functionality
+  const handleZoomChange = useCallback((newZoom: number) => {
     if (!fabricCanvas) return;
-    const activeObjects = fabricCanvas.getActiveObjects();
-    if (activeObjects.length === 0) return;
-
-    activeObjects.forEach(obj => fabricCanvas.remove(obj));
-    fabricCanvas.discardActiveObject();
+    
+    const zoomLevel = newZoom / 100;
+    setZoom(newZoom);
+    
+    fabricCanvas.setZoom(zoomLevel);
     fabricCanvas.renderAll();
-    setSelectedObject(null);
+    
+    console.log(`Zoom changed to ${newZoom}%`);
   }, [fabricCanvas]);
 
-  const handleCopy = useCallback(() => {
+  const handleFitToScreen = useCallback(() => {
     if (!fabricCanvas) return;
-    const activeObject = fabricCanvas.getActiveObject();
-    if (!activeObject) return;
+    
+    const canvasWidth = fabricCanvas.width || 1200;
+    const canvasHeight = fabricCanvas.height || 800;
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    
+    const scaleX = (windowWidth * 0.8) / canvasWidth;
+    const scaleY = (windowHeight * 0.8) / canvasHeight;
+    const optimalScale = Math.min(scaleX, scaleY);
+    
+    const newZoom = Math.round(optimalScale * 100);
+    handleZoomChange(Math.max(25, Math.min(300, newZoom)));
+  }, [fabricCanvas, handleZoomChange]);
 
-    activeObject.clone().then((cloned: FabricObject) => {
-      setClipboard(cloned);
+  // Artboard functionality
+  const createArtboard = useCallback((artboardData: Omit<Artboard, 'id'>) => {
+    if (!fabricCanvas) return;
+
+    // Deactivate other artboards
+    setArtboards(prev => prev.map(ab => ({ ...ab, isActive: false })));
+
+    const newArtboard: Artboard = {
+      ...artboardData,
+      id: `artboard_${Date.now()}`
+    };
+
+    // Create visual artboard on canvas
+    const artboardRect = new Rect({
+      left: newArtboard.x,
+      top: newArtboard.y,
+      width: newArtboard.width,
+      height: newArtboard.height,
+      fill: 'rgba(255, 255, 255, 0.9)',
+      stroke: '#3b82f6',
+      strokeWidth: 2,
+      selectable: false,
+      evented: false,
     });
-  }, [fabricCanvas]);
 
-  const handlePaste = useCallback(() => {
-    if (!fabricCanvas || !clipboard) return;
+    (artboardRect as any).isArtboard = true;
+    (artboardRect as any).artboardId = newArtboard.id;
 
-    clipboard.clone().then((cloned: FabricObject) => {
-      cloned.set({
-        left: (cloned.left || 0) + 10,
-        top: (cloned.top || 0) + 10,
-        evented: true,
-      });
-      
-      fabricCanvas.add(cloned);
-      fabricCanvas.setActiveObject(cloned);
-      fabricCanvas.renderAll();
-    });
-  }, [fabricCanvas, clipboard]);
+    fabricCanvas.add(artboardRect);
+    fabricCanvas.sendObjectToBack(artboardRect);
+    fabricCanvas.renderAll();
+
+    setArtboards(prev => [...prev, newArtboard]);
+    
+    // Create version
+    createNewVersion(`Created artboard: ${newArtboard.name}`, fabricCanvas.toJSON(), zoom, [...artboards, newArtboard]);
+    
+    console.log(`Artboard created: ${newArtboard.name}`);
+  }, [fabricCanvas, zoom, artboards, createNewVersion]);
 
   // Initialize canvas only once
   useEffect(() => {
@@ -127,6 +167,25 @@ export const CanvasEditor = () => {
 
     canvas.selection = true;
     canvas.preserveObjectStacking = true;
+
+    // Mouse wheel zoom
+    canvas.on('mouse:wheel', (opt) => {
+      const delta = opt.e.deltaY;
+      let newZoom = zoom;
+      
+      if (delta > 0) {
+        newZoom = Math.max(25, zoom - 10);
+      } else {
+        newZoom = Math.min(300, zoom + 10);
+      }
+      
+      if (newZoom !== zoom) {
+        handleZoomChange(newZoom);
+      }
+      
+      opt.e.preventDefault();
+      opt.e.stopPropagation();
+    });
 
     // Object selection events
     const handleSelectionCreated = (e: any) => {
@@ -267,8 +326,11 @@ export const CanvasEditor = () => {
       fabricCanvas.renderAll();
       console.log(`${tool} added successfully`);
       toast(`${tool} added to canvas`);
+      
+      // Create version for object creation
+      createNewVersion(`Added ${tool}`, fabricCanvas.toJSON(), zoom, artboards);
     }
-  }, [fabricCanvas]);
+  }, [fabricCanvas, zoom, artboards, createNewVersion]);
 
   const handleSelectObject = (obj: FabricObject) => {
     if (!fabricCanvas) return;
@@ -428,10 +490,23 @@ export const CanvasEditor = () => {
       {/* Canvas */}
       <canvas ref={canvasRef} className="absolute inset-0" />
 
+      {/* Debug Panel */}
+      <DebugPanel canvasState={fabricCanvas} zoom={zoom} artboards={artboards} />
+
+      {/* Zoom Controls */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <ZoomControls
+          zoom={zoom}
+          onZoomChange={handleZoomChange}
+          onFitToScreen={handleFitToScreen}
+        />
+      </div>
+
       {/* Minimal Sidebar */}
       <MinimalSidebar
         activeTool={activeTool}
         onToolClick={handleToolClick}
+        onCreateArtboard={createArtboard}
       />
 
       {/* Properties Panel */}

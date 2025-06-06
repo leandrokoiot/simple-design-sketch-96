@@ -8,15 +8,18 @@ import {
   Type, 
   Minus,
   Plus,
-  ChevronUp
+  ChevronUp,
+  Layout
 } from "lucide-react";
+import { ArtboardDialog } from "./ArtboardDialog";
 
 interface MinimalSidebarProps {
   activeTool: "select" | "rectangle" | "circle" | "text" | "line" | "hand" | "draw" | "image";
   onToolClick: (tool: "select" | "rectangle" | "circle" | "text" | "line" | "hand" | "draw" | "image") => void;
+  onCreateArtboard?: (artboard: any) => void;
 }
 
-export const MinimalSidebar = ({ activeTool, onToolClick }: MinimalSidebarProps) => {
+export const MinimalSidebar = ({ activeTool, onToolClick, onCreateArtboard }: MinimalSidebarProps) => {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
 
   const tools = [
@@ -90,6 +93,11 @@ export const MinimalSidebar = ({ activeTool, onToolClick }: MinimalSidebarProps)
 
         {/* Separator */}
         <div className="w-px h-8 bg-white/20 mx-1" />
+
+        {/* Artboard tool */}
+        {onCreateArtboard && (
+          <ArtboardDialog onCreateArtboard={onCreateArtboard} />
+        )}
 
         {/* Quick Add element */}
         <Button
